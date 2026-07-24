@@ -228,7 +228,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY_IMAGE }}
           labels: |
-            org.opencontainers.image.url=https://sing-box.oixcloud3rd.akinokaede.com/
+            org.opencontainers.image.url=https://sing-box.oixcloud3rd.akinokaede.com
             org.opencontainers.image.source=https://github.com/oixcloud3rd/sing-box
       - name: Build and push by digest
         id: build

@@ -3,7 +3,7 @@
 --category net
 --license GPL-3.0-or-later
 --description "The universal proxy platform."
---url "https://github.com/oixcloud3rd/sing-box"
+--url "https://sing-box.oixcloud3rd.akinokaede.com"
 --maintainer "oixCloud3rd <oixcloud3rd@akinokaede.com>"
 --config-files etc/sing-box/config.json
 --after-install release/config/sing-box.postinst

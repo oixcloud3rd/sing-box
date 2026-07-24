@@ -88,7 +88,7 @@ apk --root "$APK_ROOT_DIR" mkpkg \
   --info "arch:${ARCHITECTURE}" \
   --info "license:GPL-3.0-or-later with name use or association addition" \
   --info "origin:sing-box" \
-  --info "url:https://github.com/oixcloud3rd/sing-box" \
+  --info "url:https://sing-box.oixcloud3rd.akinokaede.com" \
   --info "maintainer:oixCloud3rd <oixcloud3rd@akinokaede.com>" \
   --files "$ROOT_DIR" \
   --output "$OUTPUT_PATH"
