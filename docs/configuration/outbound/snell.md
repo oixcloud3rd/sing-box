@@ -92,11 +92,11 @@ The user key, used to authenticate against a multi-user server.
 
 ==Version 4 only==
 
-Enable the non-standard Snell identity header used by FlClash-compatible servers.
+Enable the non-standard Snell identity header used by oixCloud servers.
 
 The identity is the first 16 bytes of `BLAKE3-512(psk)`. When enabled, `DLSNID01` and the identity
 are inserted after the initial Snell salt. This option is disabled by default and must be enabled
-explicitly when required by a server using the private Snell ECH-TLS extension.
+explicitly when required by a server using oixCloud's proprietary Snell ECH-TLS extension.
 
 #### reuse
 
@@ -132,7 +132,7 @@ The HTTP `Host` header sent when `obfs_mode` is `http`.
 
 TLS configuration, see [TLS](/configuration/shared/tls/).
 
-For Snell ECH-TLS, TLS must be enabled and `ech.enabled` must be `true`.
+For oixCloud's proprietary Snell ECH-TLS extension, TLS must be enabled and `ech.enabled` must be `true`.
 
 #### transport
 
@@ -140,8 +140,8 @@ For Snell ECH-TLS, TLS must be enabled and `ech.enabled` must be `true`.
 
 V2Ray transport configuration, see [V2Ray Transport](/configuration/shared/v2ray-transport/).
 
-For Snell ECH-TLS, only WebSocket transport with a non-empty `path` is supported. It cannot be
-combined with `obfs_mode`.
+For oixCloud's proprietary Snell ECH-TLS extension, only WebSocket transport with a non-empty `path`
+is supported. It cannot be combined with `obfs_mode`.
 
 The resulting protocol stack is Snell v4 over WebSocket over TLS with ECH. No additional bytes are
 added to the Snell wire format.

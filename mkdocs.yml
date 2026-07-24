@@ -48,8 +48,6 @@ nav:
       - Change Log: changelog.md
       - Migration: migration.md
       - Deprecated: deprecated.md
-      - Support: support.md
-      - Sponsors: sponsors.md
   - Installation:
       - Package Manager: installation/package-manager.md
       - Docker: installation/docker.md
@@ -270,7 +268,6 @@ plugins:
             Change Log: 更新日志
             Migration: 迁移指南
             Deprecated: 废弃功能列表
-            Support: 支持
 
             Installation: 安装
             Package Manager: 包管理器

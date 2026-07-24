@@ -91,10 +91,10 @@ Snell 协议版本，`4` `6` 之一。
 
 ==仅版本 4==
 
-启用 FlClash 兼容服务器使用的非标准 Snell 身份标头。
+启用 oixCloud 服务器使用的非标准 Snell 身份标头。
 
 身份值为 `BLAKE3-512(psk)` 的前 16 字节。启用后，会在 Snell 初始 salt 后插入
-`DLSNID01` 和身份值。此选项默认关闭；连接使用私有 Snell ECH-TLS 扩展的服务器时，
+`DLSNID01` 和身份值。此选项默认关闭；连接使用 oixCloud 专有 Snell ECH-TLS 扩展的服务器时，
 必须由用户显式启用。
 
 #### reuse
@@ -131,7 +131,7 @@ HTTP 混淆模式，`none` `http` 之一。
 
 TLS 配置，参阅 [TLS](/zh/configuration/shared/tls/)。
 
-用于 Snell ECH-TLS 时，必须启用 TLS，并将 `ech.enabled` 设为 `true`。
+用于 oixCloud 专有 Snell ECH-TLS 扩展时，必须启用 TLS，并将 `ech.enabled` 设为 `true`。
 
 #### transport
 
@@ -139,7 +139,7 @@ TLS 配置，参阅 [TLS](/zh/configuration/shared/tls/)。
 
 V2Ray 传输配置，参阅 [V2Ray 传输层](/zh/configuration/shared/v2ray-transport/)。
 
-用于 Snell ECH-TLS 时，仅支持具有非空 `path` 的 WebSocket 传输，且不能与 `obfs_mode` 组合使用。
+用于 oixCloud 专有 Snell ECH-TLS 扩展时，仅支持具有非空 `path` 的 WebSocket 传输，且不能与 `obfs_mode` 组合使用。
 
 最终协议栈为运行于 TLS with ECH WebSocket 之上的 Snell v4，不会向 Snell 线路协议添加额外字节。
 
