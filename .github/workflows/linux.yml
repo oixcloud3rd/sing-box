@@ -132,7 +132,7 @@ jobs:
           echo "BUILD_TAGS=${TAGS}" >> "${GITHUB_ENV}"
       - name: Set shared ldflags
         run: |
-          go run ./cmd/internal/check_oixcloud_key
+          CGO_ENABLED=0 go run ./cmd/internal/check_oixcloud_key
           echo "LDFLAGS_SHARED=$(cat release/LDFLAGS) -X 'github.com/sagernet/sing-box/constant.OIXCloudPrivateKey=${OIXCLOUD_PRIVATE_KEY}'" >> "${GITHUB_ENV}"
       - name: Build (naive)
         if: matrix.naive
@@ -187,8 +187,7 @@ jobs:
             -p "dist/${NAME}_${{ needs.calculate_version.outputs.version }}_linux_${{ matrix.debian }}.deb" \
             --architecture ${{ matrix.debian }} \
             dist/sing-box=/usr/bin/sing-box
-          curl -Lo '/tmp/debsigs.diff' 'https://gitlab.com/debsigs/debsigs/-/commit/160138f5de1ec110376d3c807b60a37388bc7c90.diff'
-          sudo patch /usr/bin/debsigs < '/tmp/debsigs.diff'
+          sudo patch --forward --batch /usr/bin/debsigs < .github/patches/debsigs-gpgopts.patch
           rm -rf $HOME/.gnupg
           gpg --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --import <<EOF
           ${{ secrets.GPG_KEY }}
