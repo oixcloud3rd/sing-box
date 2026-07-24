@@ -15,6 +15,10 @@ on:
     types:
       - published
 
+env:
+  OIXCLOUD_PRIVATE_KEY: ${{ secrets.OIXCLOUD_PRIVATE_KEY }}
+  OIXCLOUD_REQUIRE_PRIVATE_KEY: "1"
+
 jobs:
   calculate_version:
     name: Calculate version
@@ -128,7 +132,8 @@ jobs:
           echo "BUILD_TAGS=${TAGS}" >> "${GITHUB_ENV}"
       - name: Set shared ldflags
         run: |
-          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS)" >> "${GITHUB_ENV}"
+          go run ./cmd/internal/check_oixcloud_key
+          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS) -X 'github.com/sagernet/sing-box/constant.OIXCloudPrivateKey=${OIXCLOUD_PRIVATE_KEY}'" >> "${GITHUB_ENV}"
       - name: Build (naive)
         if: matrix.naive
         run: |

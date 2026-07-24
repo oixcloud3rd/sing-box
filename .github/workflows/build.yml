@@ -40,6 +40,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ inputs.build }}
   cancel-in-progress: true
 
+env:
+  OIXCLOUD_PRIVATE_KEY: ${{ secrets.OIXCLOUD_PRIVATE_KEY }}
+  OIXCLOUD_REQUIRE_PRIVATE_KEY: "1"
+
 jobs:
   calculate_version:
     name: Calculate version
@@ -234,7 +238,8 @@ jobs:
           echo "BUILD_TAGS=${TAGS}" >> "${GITHUB_ENV}"
       - name: Set shared ldflags
         run: |
-          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS)" >> "${GITHUB_ENV}"
+          go run ./cmd/internal/check_oixcloud_key
+          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS) -X 'github.com/sagernet/sing-box/constant.OIXCloudPrivateKey=${OIXCLOUD_PRIVATE_KEY}'" >> "${GITHUB_ENV}"
       - name: Build (purego)
         if: matrix.variant == 'purego'
         run: |
@@ -525,7 +530,8 @@ jobs:
           echo "BUILD_TAGS=${TAGS}" >> "${GITHUB_ENV}"
       - name: Set shared ldflags
         run: |
-          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS)" >> "${GITHUB_ENV}"
+          go run ./cmd/internal/check_oixcloud_key
+          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS) -X 'github.com/sagernet/sing-box/constant.OIXCloudPrivateKey=${OIXCLOUD_PRIVATE_KEY}'" >> "${GITHUB_ENV}"
       - name: Build
         run: |
           set -xeuo pipefail
@@ -597,11 +603,12 @@ jobs:
       - name: Build
         if: matrix.naive
         run: |
+          go run ./cmd/internal/check_oixcloud_key
           $TAGS = Get-Content release/DEFAULT_BUILD_TAGS_WINDOWS
           $LDFLAGS_SHARED = Get-Content release/LDFLAGS
           mkdir -p dist
           go build -v -trimpath -o dist/sing-box.exe -tags "$TAGS" `
-          -ldflags "-X 'github.com/sagernet/sing-box/constant.Version=${{ needs.calculate_version.outputs.version }}' $LDFLAGS_SHARED -s -w -buildid=" `
+          -ldflags "-X 'github.com/sagernet/sing-box/constant.Version=${{ needs.calculate_version.outputs.version }}' -X 'github.com/sagernet/sing-box/constant.OIXCloudPrivateKey=$env:OIXCLOUD_PRIVATE_KEY' $LDFLAGS_SHARED -s -w -buildid=" `
           ./cmd/sing-box
         env:
           CGO_ENABLED: "0"
@@ -611,11 +618,12 @@ jobs:
       - name: Build
         if: ${{ !matrix.naive }}
         run: |
+          go run ./cmd/internal/check_oixcloud_key
           $TAGS = Get-Content release/DEFAULT_BUILD_TAGS_OTHERS
           $LDFLAGS_SHARED = Get-Content release/LDFLAGS
           mkdir -p dist
           go build -v -trimpath -o dist/sing-box.exe -tags "$TAGS" `
-          -ldflags "-X 'github.com/sagernet/sing-box/constant.Version=${{ needs.calculate_version.outputs.version }}' $LDFLAGS_SHARED -s -w -buildid=" `
+          -ldflags "-X 'github.com/sagernet/sing-box/constant.Version=${{ needs.calculate_version.outputs.version }}' -X 'github.com/sagernet/sing-box/constant.OIXCloudPrivateKey=$env:OIXCLOUD_PRIVATE_KEY' $LDFLAGS_SHARED -s -w -buildid=" `
           ./cmd/sing-box
         env:
           CGO_ENABLED: "0"

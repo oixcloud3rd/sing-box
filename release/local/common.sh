@@ -42,11 +42,12 @@ get_version() {
 }
 
 get_ldflags() {
+    (cd "$PROJECT_DIR" && OIXCLOUD_PRIVATE_KEY=${OIXCLOUD_PRIVATE_KEY:-} go run ./cmd/internal/check_oixcloud_key)
     local version
     version=$(get_version)
     local shared_ldflags
     shared_ldflags=$(cat "$PROJECT_DIR/release/LDFLAGS")
-    echo "-X 'github.com/sagernet/sing-box/constant.Version=${version}' ${shared_ldflags} -s -w -buildid="
+    echo "-X 'github.com/sagernet/sing-box/constant.Version=${version}' -X 'github.com/sagernet/sing-box/constant.OIXCloudPrivateKey=${OIXCLOUD_PRIVATE_KEY}' ${shared_ldflags} -s -w -buildid="
 }
 
 build_sing_box() {
