@@ -828,7 +828,7 @@ jobs:
           VERSION_NAME=$(grep VERSION_NAME clients/android/version.properties | cut -d= -f2)
           cat > dist/SFA-version-metadata.json << EOF
           {
-            "application_id": "io.github.oixcloud3rd",
+            "application_id": "io.github.oixcloud3rd.sfa",
             "version_code": ${VERSION_CODE},
             "version_name": "${VERSION_NAME}"
           }
