@@ -3,8 +3,8 @@ name: Build Linux Packages
 on:
   #push:
   #  branches:
-  #    - stable
-  #    - testing
+  #    - stable-patch
+  #    - testing-patch
   workflow_dispatch:
     inputs:
       version:

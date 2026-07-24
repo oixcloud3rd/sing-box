@@ -3,8 +3,8 @@ name: Publish Docker Images
 on:
   #push:
   #  branches:
-  #    - stable
-  #    - testing
+  #    - stable-patch
+  #    - testing-patch
   release:
     types:
       - published
@@ -13,8 +13,12 @@ on:
       tag:
         description: "The tag version you want to build"
 
+permissions:
+  contents: read
+  packages: write
+
 env:
-  REGISTRY_IMAGE: ghcr.io/sagernet/sing-box
+  REGISTRY_IMAGE: ghcr.io/oixcloud3rd/sing-box
   OIXCLOUD_PRIVATE_KEY: ${{ secrets.OIXCLOUD_PRIVATE_KEY }}
   OIXCLOUD_REQUIRE_PRIVATE_KEY: "1"
 
