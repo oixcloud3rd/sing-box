@@ -924,6 +924,19 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         run: |-
           go run -v ./cmd/internal/update_desktop_version --ci --nightly
+      - name: Setup signing
+        run: |-
+          $certificatePath = Join-Path $env:RUNNER_TEMP "windows-signing.p12"
+          [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATES_P12))
+          @{
+            windows = @{
+              certificateFile = $certificatePath
+              certificatePassword = $env:WINDOWS_P12_PASSWORD
+            }
+          } | ConvertTo-Json -Depth 3 | Set-Content -Encoding utf8NoBOM clients/desktop/signing.local.json
+        env:
+          WINDOWS_CERTIFICATES_P12: ${{ secrets.WINDOWS_CERTIFICATES_P12 }}
+          WINDOWS_P12_PASSWORD: ${{ secrets.WINDOWS_P12_PASSWORD }}
       - name: Install dependencies
         run: |-
           pnpm -C clients/desktop install
@@ -931,7 +944,6 @@ jobs:
         run: |-
           pnpm -C clients/desktop package:win -- ${{ matrix.desktop_arch }}
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Prepare upload
         run: |-
