@@ -71,7 +71,7 @@ func (t *fakeOIXCloudTransport) ExchangeAsync(ctx context.Context, message *mDNS
 	callback(t.Exchange(ctx, message))
 }
 
-func testOIXCloudPrivateKey() ed25519.PrivateKey {
+func testOIXCloudDNSAuthPrivateKey() ed25519.PrivateKey {
 	seed := make([]byte, ed25519.SeedSize)
 	for index := range seed {
 		seed[index] = byte(index)
@@ -83,36 +83,36 @@ func testOIXCloudTransport(upstream adapter.DNSTransport, unixTime int64) *oixCl
 	return &oixCloudTransport{
 		DNSTransport: upstream,
 		logger:       log.NewNOPFactory().Logger(),
-		privateKey:   testOIXCloudPrivateKey(),
+		privateKey:   testOIXCloudDNSAuthPrivateKey(),
 		timeFunc: func() time.Time {
 			return time.Unix(unixTime, 0)
 		},
 	}
 }
 
-func TestParseOIXCloudPrivateKey(t *testing.T) {
+func TestParseOIXCloudDNSAuthPrivateKey(t *testing.T) {
 	t.Parallel()
 
-	seed := testOIXCloudPrivateKey().Seed()
+	seed := testOIXCloudDNSAuthPrivateKey().Seed()
 	for _, encoded := range []string{
 		base64.StdEncoding.EncodeToString(seed),
 		base64.RawStdEncoding.EncodeToString(seed),
 	} {
-		privateKey, err := parseOIXCloudPrivateKey(encoded)
+		privateKey, err := parseOIXCloudDNSAuthPrivateKey(encoded)
 		require.NoError(t, err)
-		require.Equal(t, testOIXCloudPrivateKey(), privateKey)
+		require.Equal(t, testOIXCloudDNSAuthPrivateKey(), privateKey)
 	}
-	_, err := parseOIXCloudPrivateKey("")
-	require.EqualError(t, err, "missing oixCloud private key: inject OIXCLOUD_PRIVATE_KEY at build time")
-	_, err = parseOIXCloudPrivateKey("not-base64!")
-	require.ErrorContains(t, err, "decode oixCloud private key")
-	_, err = parseOIXCloudPrivateKey(base64.StdEncoding.EncodeToString([]byte("short")))
-	require.EqualError(t, err, "invalid oixCloud private key seed length: got 5, want 32")
+	_, err := parseOIXCloudDNSAuthPrivateKey("")
+	require.EqualError(t, err, "missing oixCloud DNS auth private key: inject OIXCLOUD_DNS_AUTH_PRIVATE_KEY at build time")
+	_, err = parseOIXCloudDNSAuthPrivateKey("not-base64!")
+	require.ErrorContains(t, err, "decode oixCloud DNS auth private key")
+	_, err = parseOIXCloudDNSAuthPrivateKey(base64.StdEncoding.EncodeToString([]byte("short")))
+	require.EqualError(t, err, "invalid oixCloud DNS auth private key seed length: got 5, want 32")
 }
 
 func TestOIXCloudTransportRegistryWrapping(t *testing.T) {
-	originalPrivateKey := C.OIXCloudPrivateKey
-	t.Cleanup(func() { C.OIXCloudPrivateKey = originalPrivateKey })
+	originalPrivateKey := C.OIXCloudDNSAuthPrivateKey
+	t.Cleanup(func() { C.OIXCloudDNSAuthPrivateKey = originalPrivateKey })
 
 	upstream := &fakeOIXCloudTransport{}
 	registry := NewTransportRegistry()
@@ -124,11 +124,11 @@ func TestOIXCloudTransportRegistryWrapping(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, upstream, plain)
 
-	C.OIXCloudPrivateKey = ""
+	C.OIXCloudDNSAuthPrivateKey = ""
 	_, err = registry.CreateDNSTransport(context.Background(), nil, "signed", "test", &option.RemoteDNSServerOptions{OIXCloud: true})
-	require.ErrorContains(t, err, "missing oixCloud private key")
+	require.ErrorContains(t, err, "missing oixCloud DNS auth private key")
 
-	C.OIXCloudPrivateKey = base64.StdEncoding.EncodeToString(testOIXCloudPrivateKey().Seed())
+	C.OIXCloudDNSAuthPrivateKey = base64.StdEncoding.EncodeToString(testOIXCloudDNSAuthPrivateKey().Seed())
 	signed, err := registry.CreateDNSTransport(context.Background(), nil, "signed", "test", &option.RemoteDNSServerOptions{OIXCloud: true})
 	require.NoError(t, err)
 	require.IsType(t, &oixCloudTransport{}, signed)
@@ -150,7 +150,7 @@ func TestOIXCloudTokenizeHost(t *testing.T) {
 	second, err := encoding.DecodeString(strings.ToUpper(labels[1]))
 	require.NoError(t, err)
 	signature := append(first, second...)
-	publicKey := testOIXCloudPrivateKey().Public().(ed25519.PublicKey)
+	publicKey := testOIXCloudDNSAuthPrivateKey().Public().(ed25519.PublicKey)
 	require.True(t, ed25519.Verify(publicKey, oixCloudAuthMessage("example.com", 1700000000/oixCloudWindowSeconds), signature))
 
 	transport.timeFunc = func() time.Time { return time.Unix(1700000099, 0) }

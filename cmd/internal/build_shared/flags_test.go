@@ -8,33 +8,33 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestOIXCloudLinkerFlag(t *testing.T) {
+func TestOIXCloudDNSAuthLinkerFlag(t *testing.T) {
 	seed := make([]byte, 32)
 	encoded := base64.StdEncoding.EncodeToString(seed)
-	t.Setenv(OIXCloudPrivateKeyEnvironment, encoded)
-	flag, err := OIXCloudLinkerFlag(true)
+	t.Setenv(OIXCloudDNSAuthPrivateKeyEnvironment, encoded)
+	flag, err := OIXCloudDNSAuthLinkerFlag(true)
 	require.NoError(t, err)
-	require.Equal(t, "-X "+oixCloudPrivateKeyLinkerName+"="+encoded, flag)
+	require.Equal(t, "-X "+oixCloudDNSAuthPrivateKeyLinkerName+"="+encoded, flag)
 	require.Contains(t, LinkerFlags("test", false), flag)
 }
 
-func TestOIXCloudLinkerFlagValidation(t *testing.T) {
-	t.Setenv(OIXCloudPrivateKeyEnvironment, "")
-	flag, err := OIXCloudLinkerFlag(false)
+func TestOIXCloudDNSAuthLinkerFlagValidation(t *testing.T) {
+	t.Setenv(OIXCloudDNSAuthPrivateKeyEnvironment, "")
+	flag, err := OIXCloudDNSAuthLinkerFlag(false)
 	require.NoError(t, err)
 	require.Empty(t, flag)
-	_, err = OIXCloudLinkerFlag(true)
-	require.EqualError(t, err, "missing "+OIXCloudPrivateKeyEnvironment)
+	_, err = OIXCloudDNSAuthLinkerFlag(true)
+	require.EqualError(t, err, "missing "+OIXCloudDNSAuthPrivateKeyEnvironment)
 
-	t.Setenv(OIXCloudPrivateKeyEnvironment, "invalid!")
-	_, err = OIXCloudLinkerFlag(false)
-	require.ErrorContains(t, err, "decode "+OIXCloudPrivateKeyEnvironment)
+	t.Setenv(OIXCloudDNSAuthPrivateKeyEnvironment, "invalid!")
+	_, err = OIXCloudDNSAuthLinkerFlag(false)
+	require.ErrorContains(t, err, "decode "+OIXCloudDNSAuthPrivateKeyEnvironment)
 
-	t.Setenv(OIXCloudPrivateKeyEnvironment, base64.StdEncoding.EncodeToString([]byte("short")))
-	_, err = OIXCloudLinkerFlag(false)
-	require.EqualError(t, err, "invalid "+OIXCloudPrivateKeyEnvironment+" seed length: got 5, want 32")
+	t.Setenv(OIXCloudDNSAuthPrivateKeyEnvironment, base64.StdEncoding.EncodeToString([]byte("short")))
+	_, err = OIXCloudDNSAuthLinkerFlag(false)
+	require.EqualError(t, err, "invalid "+OIXCloudDNSAuthPrivateKeyEnvironment+" seed length: got 5, want 32")
 
-	t.Setenv(OIXCloudPrivateKeyEnvironment, strings.TrimRight(base64.StdEncoding.EncodeToString(make([]byte, 32)), "="))
-	_, err = OIXCloudLinkerFlag(true)
+	t.Setenv(OIXCloudDNSAuthPrivateKeyEnvironment, strings.TrimRight(base64.StdEncoding.EncodeToString(make([]byte, 32)), "="))
+	_, err = OIXCloudDNSAuthLinkerFlag(true)
 	require.NoError(t, err)
 }

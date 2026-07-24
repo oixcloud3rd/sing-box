@@ -31,7 +31,7 @@ type oixCloudTransport struct {
 }
 
 func newOIXCloudTransport(logger log.ContextLogger, transport adapter.DNSTransport) (adapter.DNSTransport, error) {
-	privateKey, err := parseOIXCloudPrivateKey(C.OIXCloudPrivateKey)
+	privateKey, err := parseOIXCloudDNSAuthPrivateKey(C.OIXCloudDNSAuthPrivateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -43,20 +43,20 @@ func newOIXCloudTransport(logger log.ContextLogger, transport adapter.DNSTranspo
 	}, nil
 }
 
-func parseOIXCloudPrivateKey(rawKey string) (ed25519.PrivateKey, error) {
+func parseOIXCloudDNSAuthPrivateKey(rawKey string) (ed25519.PrivateKey, error) {
 	rawKey = strings.TrimSpace(rawKey)
 	if rawKey == "" {
-		return nil, errors.New("missing oixCloud private key: inject OIXCLOUD_PRIVATE_KEY at build time")
+		return nil, errors.New("missing oixCloud DNS auth private key: inject OIXCLOUD_DNS_AUTH_PRIVATE_KEY at build time")
 	}
 	seed, err := base64.StdEncoding.DecodeString(rawKey)
 	if err != nil {
 		seed, err = base64.RawStdEncoding.DecodeString(rawKey)
 		if err != nil {
-			return nil, E.Cause(err, "decode oixCloud private key")
+			return nil, E.Cause(err, "decode oixCloud DNS auth private key")
 		}
 	}
 	if len(seed) != ed25519.SeedSize {
-		return nil, E.New("invalid oixCloud private key seed length: got ", len(seed), ", want ", ed25519.SeedSize)
+		return nil, E.New("invalid oixCloud DNS auth private key seed length: got ", len(seed), ", want ", ed25519.SeedSize)
 	}
 	return ed25519.NewKeyFromSeed(seed), nil
 }

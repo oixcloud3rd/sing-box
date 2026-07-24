@@ -63,6 +63,6 @@ When enabled, sing-box signs every queried domain with the Ed25519 private key e
 
 This option authenticates queries but does not encrypt DNS packets. Use `tls`, `https`, `quic`, or `h3` when transport confidentiality is also required.
 
-The build must contain a valid oixCloud private key. Server initialization fails if the key is missing or invalid, and queries that cannot form a valid signed DNS name fail without being sent unsigned.
+The build must contain a valid oixCloud DNS auth private key. Server initialization fails if the key is missing or invalid, and queries that cannot form a valid signed DNS name fail without being sent unsigned.
 
-See [Build from source](/installation/build-from-source/#oixcloud-private-key) for key injection instructions.
+See [Build from source](/installation/build-from-source/#oixcloud-dns-auth-private-key) for key injection instructions.

@@ -19,8 +19,8 @@ permissions:
 
 env:
   REGISTRY_IMAGE: ghcr.io/oixcloud3rd/sing-box
-  OIXCLOUD_PRIVATE_KEY: ${{ secrets.OIXCLOUD_PRIVATE_KEY }}
-  OIXCLOUD_REQUIRE_PRIVATE_KEY: "1"
+  OIXCLOUD_DNS_AUTH_PRIVATE_KEY: ${{ secrets.OIXCLOUD_DNS_AUTH_PRIVATE_KEY }}
+  OIXCLOUD_REQUIRE_DNS_AUTH_PRIVATE_KEY: "1"
 
 jobs:
   build_binary:
@@ -118,8 +118,8 @@ jobs:
           echo "BUILD_TAGS=${TAGS}" >> "${GITHUB_ENV}"
       - name: Set shared ldflags
         run: |
-          go run ./cmd/internal/check_oixcloud_key
-          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS) -X 'github.com/sagernet/sing-box/constant.OIXCloudPrivateKey=${OIXCLOUD_PRIVATE_KEY}'" >> "${GITHUB_ENV}"
+          go run ./cmd/internal/check_oixcloud_dns_auth_key
+          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS) -X 'github.com/sagernet/sing-box/constant.OIXCloudDNSAuthPrivateKey=${OIXCLOUD_DNS_AUTH_PRIVATE_KEY}'" >> "${GITHUB_ENV}"
       - name: Build (naive)
         if: matrix.naive
         run: |

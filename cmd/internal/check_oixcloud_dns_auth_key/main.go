@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	_, err := build_shared.OIXCloudLinkerFlag(true)
+	_, err := build_shared.OIXCloudDNSAuthLinkerFlag(true)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
