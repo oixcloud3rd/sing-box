@@ -84,8 +84,8 @@ apk --root "$APK_ROOT_DIR" mkpkg \
   --info "arch:${ARCHITECTURE}" \
   --info "license:GPL-3.0-or-later" \
   --info "origin:sing-box" \
-  --info "url:https://sing-box.sagernet.org/" \
-  --info "maintainer:nekohasekai <contact-git@sekai.icu>" \
+  --info "url:https://github.com/oixcloud3rd/sing-box" \
+  --info "maintainer:oixCloud3rd <oixcloud3rd@akinokaede.com>" \
   --info "depends:ca-bundle kmod-inet-diag kmod-tun firewall4 kmod-nft-queue" \
   --info "provider-priority:100" \
   --script "pre-deinstall:${PROJECT}/release/config/openwrt.prerm" \
