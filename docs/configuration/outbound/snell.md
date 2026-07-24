@@ -21,6 +21,9 @@ icon: material/new-box
   "obfs_mode": "",
   "obfs_host": "",
 
+  "tls": {},
+  "transport": {},
+
   ... // Dial Fields
 }
 ```
@@ -111,6 +114,63 @@ HTTP obfuscation mode, one of `none` `http`.
 The HTTP `Host` header sent when `obfs_mode` is `http`.
 
 `bing.com` is used by default.
+
+#### tls
+
+==Version 4 only==
+
+TLS configuration, see [TLS](/configuration/shared/tls/).
+
+For Snell ECH-TLS, TLS must be enabled and `ech.enabled` must be `true`.
+
+#### transport
+
+==Version 4 only==
+
+V2Ray transport configuration, see [V2Ray Transport](/configuration/shared/v2ray-transport/).
+
+For Snell ECH-TLS, only WebSocket transport with a non-empty `path` is supported. It cannot be
+combined with `obfs_mode`.
+
+The resulting protocol stack is Snell v4 over WebSocket over TLS with ECH. No additional bytes are
+added to the Snell wire format.
+
+Example:
+
+```json
+{
+  "type": "snell",
+  "tag": "snell-ech",
+  "server": "server.example.com",
+  "server_port": 443,
+  "version": 4,
+  "psk": "password",
+  "reuse": true,
+  "tls": {
+    "enabled": true,
+    "server_name": "public.example.com",
+    "ech": {
+      "enabled": true,
+      "config": [
+        "-----BEGIN ECH CONFIGS-----",
+        "...",
+        "-----END ECH CONFIGS-----"
+      ]
+    },
+    "utls": {
+      "enabled": true,
+      "fingerprint": "chrome"
+    }
+  },
+  "transport": {
+    "type": "ws",
+    "path": "/snell",
+    "headers": {
+      "Host": "tunnel.example.com"
+    }
+  }
+}
+```
 
 #### mode
 

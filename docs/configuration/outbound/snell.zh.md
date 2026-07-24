@@ -21,6 +21,9 @@ icon: material/new-box
   "obfs_mode": "",
   "obfs_host": "",
 
+  "tls": {},
+  "transport": {},
+
   ... // 拨号字段
 }
 ```
@@ -110,6 +113,61 @@ HTTP 混淆模式，`none` `http` 之一。
 `obfs_mode` 为 `http` 时发送的 HTTP `Host` 头。
 
 默认为 `bing.com`。
+
+#### tls
+
+==仅版本 4==
+
+TLS 配置，参阅 [TLS](/zh/configuration/shared/tls/)。
+
+用于 Snell ECH-TLS 时，必须启用 TLS，并将 `ech.enabled` 设为 `true`。
+
+#### transport
+
+==仅版本 4==
+
+V2Ray 传输配置，参阅 [V2Ray 传输层](/zh/configuration/shared/v2ray-transport/)。
+
+用于 Snell ECH-TLS 时，仅支持具有非空 `path` 的 WebSocket 传输，且不能与 `obfs_mode` 组合使用。
+
+最终协议栈为运行于 TLS with ECH WebSocket 之上的 Snell v4，不会向 Snell 线路协议添加额外字节。
+
+示例：
+
+```json
+{
+  "type": "snell",
+  "tag": "snell-ech",
+  "server": "server.example.com",
+  "server_port": 443,
+  "version": 4,
+  "psk": "password",
+  "reuse": true,
+  "tls": {
+    "enabled": true,
+    "server_name": "public.example.com",
+    "ech": {
+      "enabled": true,
+      "config": [
+        "-----BEGIN ECH CONFIGS-----",
+        "...",
+        "-----END ECH CONFIGS-----"
+      ]
+    },
+    "utls": {
+      "enabled": true,
+      "fingerprint": "chrome"
+    }
+  },
+  "transport": {
+    "type": "ws",
+    "path": "/snell",
+    "headers": {
+      "Host": "tunnel.example.com"
+    }
+  }
+}
+```
 
 #### mode
 

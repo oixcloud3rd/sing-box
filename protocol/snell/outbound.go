@@ -3,16 +3,20 @@ package snell
 import (
 	"context"
 	"net"
+	"os"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/outbound"
 	"github.com/sagernet/sing-box/common/dialer"
+	"github.com/sagernet/sing-box/common/tls"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing-box/transport/v2ray"
 	snellprotocol "github.com/sagernet/sing-snell"
 	"github.com/sagernet/sing-snell/snellv4"
 	"github.com/sagernet/sing-snell/snellv6"
+	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/bufio"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/logger"
@@ -30,6 +34,7 @@ type Outbound struct {
 	dialer     N.Dialer
 	client     snellClient
 	serverAddr M.Socksaddr
+	transport  adapter.V2RayClientTransport
 }
 
 var _ adapter.InterfaceUpdateListener = (*Outbound)(nil)
@@ -42,11 +47,28 @@ type snellClient interface {
 }
 
 func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.SnellOutboundOptions) (adapter.Outbound, error) {
+	echTLSEnabled, err := validateECHTLSOptions(options)
+	if err != nil {
+		return nil, err
+	}
 	outboundDialer, err := dialer.New(ctx, options.DialerOptions, options.ServerIsDomain())
 	if err != nil {
 		return nil, err
 	}
 	serverAddr := options.ServerOptions.Build()
+	serverDialer := N.Dialer(outboundDialer)
+	var clientTransport adapter.V2RayClientTransport
+	if echTLSEnabled {
+		tlsConfig, err := tls.NewClient(ctx, logger, options.Server, common.PtrValueOrDefault(options.TLS))
+		if err != nil {
+			return nil, E.Cause(err, "create Snell ECH-TLS client")
+		}
+		clientTransport, err = v2ray.NewClientTransport(ctx, outboundDialer, serverAddr, common.PtrValueOrDefault(options.Transport), tlsConfig)
+		if err != nil {
+			return nil, E.Cause(err, "create Snell ECH-TLS WebSocket transport")
+		}
+		serverDialer = &transportDialer{transport: clientTransport}
+	}
 	var client snellClient
 	switch options.Version {
 	case 4:
@@ -61,7 +83,7 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 			Reuse:    options.Reuse,
 			ObfsMode: obfsMode,
 			ObfsHost: options.ObfsOptions.ObfsHost,
-			Dialer:   outboundDialer,
+			Dialer:   serverDialer,
 			Server:   serverAddr,
 		})
 	case 6:
@@ -75,7 +97,7 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 			UserKey: []byte(options.UserKey),
 			Mode:    mode,
 			Reuse:   options.Reuse,
-			Dialer:  outboundDialer,
+			Dialer:  serverDialer,
 			Server:  serverAddr,
 		})
 	case 0:
@@ -84,16 +106,67 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 		return nil, E.New("snell: unsupported version: ", options.Version)
 	}
 	if err != nil {
+		common.Close(clientTransport)
 		return nil, err
 	}
 	outbound := &Outbound{
 		Adapter:    outbound.NewAdapterWithDialerOptions(C.TypeSnell, tag, options.Network.Build(), options.DialerOptions),
 		logger:     logger,
-		dialer:     outboundDialer,
+		dialer:     serverDialer,
 		client:     client,
 		serverAddr: serverAddr,
+		transport:  clientTransport,
 	}
 	return outbound, nil
+}
+
+func validateECHTLSOptions(options option.SnellOutboundOptions) (bool, error) {
+	hasTLS := options.TLS != nil
+	hasTransport := options.Transport != nil
+	if !hasTLS && !hasTransport {
+		return false, nil
+	}
+	if options.Version != 4 {
+		return false, E.New("snell: ECH-TLS requires version 4")
+	}
+	if !hasTransport {
+		return false, E.New("snell: ECH-TLS requires WebSocket transport")
+	}
+	if options.Transport.Type != C.V2RayTransportTypeWebsocket {
+		return false, E.New("snell: ECH-TLS requires WebSocket transport")
+	}
+	if options.Transport.WebsocketOptions.Path == "" {
+		return false, E.New("snell: ECH-TLS requires a non-empty WebSocket path")
+	}
+	if !hasTLS || !options.TLS.Enabled {
+		return false, E.New("snell: ECH-TLS requires TLS")
+	}
+	if options.TLS.ECH == nil || !options.TLS.ECH.Enabled {
+		return false, E.New("snell: ECH-TLS requires ECH")
+	}
+	obfsMode, err := snellprotocol.ParseObfsMode(options.ObfsOptions.ObfsMode)
+	if err != nil {
+		return false, err
+	}
+	if obfsMode != snellprotocol.ObfsModeNone {
+		return false, E.New("snell: ECH-TLS cannot be combined with obfs")
+	}
+	return true, nil
+}
+
+type transportDialer struct {
+	transport adapter.V2RayClientTransport
+}
+
+func (d *transportDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+	if N.NetworkName(network) != N.NetworkTCP {
+		return nil, E.Extend(N.ErrUnknownNetwork, network)
+	}
+	return d.transport.DialContext(ctx)
+}
+
+func (d *transportDialer) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
+	return nil, os.ErrInvalid
 }
 
 func (h *Outbound) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
@@ -141,8 +214,11 @@ func (h *Outbound) ListenPacket(ctx context.Context, destination M.Socksaddr) (n
 
 func (h *Outbound) InterfaceUpdated() {
 	h.client.Reset()
+	if h.transport != nil {
+		h.transport.Close()
+	}
 }
 
 func (h *Outbound) Close() error {
-	return h.client.Close()
+	return common.Close(h.client, h.transport)
 }

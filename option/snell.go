@@ -61,6 +61,8 @@ type _SnellOutboundOptions struct {
 	Network     NetworkList            `json:"network,omitempty"`
 	ObfsOptions SnellObfsClientOptions `json:"-"`
 	V6Options   SnellV6Options         `json:"-"`
+	OutboundTLSOptionsContainer
+	Transport *V2RayTransportOptions `json:"transport,omitempty"`
 }
 
 type SnellOutboundOptions _SnellOutboundOptions
