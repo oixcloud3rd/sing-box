@@ -245,4 +245,4 @@ jobs:
       - name: Publish packages
         if: github.event_name != 'push'
         run: |-
-          ls dist | xargs -I {} curl -F "package=@dist/{}" https://${{ secrets.FURY_TOKEN }}@push.fury.io/sagernet/
+          ls dist | xargs -I {} curl -F "package=@dist/{}" https://${{ secrets.FURY_TOKEN }}@push.fury.io/oixcloud3rd/
