@@ -16,6 +16,7 @@ func TestSnellOutboundECHTLSOptionsJSON(t *testing.T) {
 		"server_port": 443,
 		"version": 4,
 		"psk": "password",
+		"identity": true,
 		"reuse": true,
 		"tls": {
 			"enabled": true,
@@ -43,6 +44,7 @@ func TestSnellOutboundECHTLSOptionsJSON(t *testing.T) {
 	}`)
 	var options SnellOutboundOptions
 	require.NoError(t, json.Unmarshal(content, &options))
+	require.True(t, options.Identity)
 	require.NotNil(t, options.TLS)
 	require.True(t, options.TLS.Enabled)
 	require.NotNil(t, options.TLS.ECH)
@@ -71,6 +73,7 @@ func TestSnellOutboundLegacyOptionsJSON(t *testing.T) {
 	require.NoError(t, json.Unmarshal(content, &options))
 	require.Nil(t, options.TLS)
 	require.Nil(t, options.Transport)
+	require.False(t, options.Identity)
 
 	encoded, err := json.Marshal(options)
 	require.NoError(t, err)

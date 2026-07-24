@@ -47,6 +47,10 @@ type snellClient interface {
 }
 
 func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.SnellOutboundOptions) (adapter.Outbound, error) {
+	err := validateIdentityOptions(options)
+	if err != nil {
+		return nil, err
+	}
 	echTLSEnabled, err := validateECHTLSOptions(options)
 	if err != nil {
 		return nil, err
@@ -80,6 +84,7 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 		client, err = snellv4.NewClient(snellv4.ClientOptions{
 			PSK:      []byte(options.PSK),
 			UserKey:  []byte(options.UserKey),
+			Identity: options.Identity,
 			Reuse:    options.Reuse,
 			ObfsMode: obfsMode,
 			ObfsHost: options.ObfsOptions.ObfsHost,
@@ -118,6 +123,13 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 		transport:  clientTransport,
 	}
 	return outbound, nil
+}
+
+func validateIdentityOptions(options option.SnellOutboundOptions) error {
+	if options.Identity && options.Version != 4 {
+		return E.New("snell: identity requires version 4")
+	}
+	return nil
 }
 
 func validateECHTLSOptions(options option.SnellOutboundOptions) (bool, error) {

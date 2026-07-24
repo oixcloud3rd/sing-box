@@ -16,6 +16,7 @@ icon: material/new-box
   "version": 4,
   "psk": "password",
   "userkey": "",
+  "identity": false,
   "reuse": false,
   "network": "tcp",
   "obfs_mode": "",
@@ -87,6 +88,16 @@ The pre-shared key.
 
 The user key, used to authenticate against a multi-user server.
 
+#### identity
+
+==Version 4 only==
+
+Enable the non-standard Snell identity header used by FlClash-compatible servers.
+
+The identity is the first 16 bytes of `BLAKE3-512(psk)`. When enabled, `DLSNID01` and the identity
+are inserted after the initial Snell salt. This option is disabled by default and must be enabled
+explicitly when required by a server using the private Snell ECH-TLS extension.
+
 #### reuse
 
 Enable connection reuse (the Snell v2 `CONNECT` command).
@@ -145,6 +156,7 @@ Example:
   "server_port": 443,
   "version": 4,
   "psk": "password",
+  "identity": true,
   "reuse": true,
   "tls": {
     "enabled": true,

@@ -57,6 +57,7 @@ type _SnellOutboundOptions struct {
 	Version     int                    `json:"version"`
 	PSK         string                 `json:"psk"`
 	UserKey     string                 `json:"userkey,omitempty"`
+	Identity    bool                   `json:"identity,omitempty"`
 	Reuse       bool                   `json:"reuse,omitempty"`
 	Network     NetworkList            `json:"network,omitempty"`
 	ObfsOptions SnellObfsClientOptions `json:"-"`

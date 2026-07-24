@@ -16,6 +16,7 @@ icon: material/new-box
   "version": 4,
   "psk": "password",
   "userkey": "",
+  "identity": false,
   "reuse": false,
   "network": "tcp",
   "obfs_mode": "",
@@ -86,6 +87,16 @@ Snell 协议版本，`4` `6` 之一。
 
 用户密钥，用于向多用户服务器进行认证。
 
+#### identity
+
+==仅版本 4==
+
+启用 FlClash 兼容服务器使用的非标准 Snell 身份标头。
+
+身份值为 `BLAKE3-512(psk)` 的前 16 字节。启用后，会在 Snell 初始 salt 后插入
+`DLSNID01` 和身份值。此选项默认关闭；连接使用私有 Snell ECH-TLS 扩展的服务器时，
+必须由用户显式启用。
+
 #### reuse
 
 启用连接复用（Snell v2 `CONNECT` 命令）。
@@ -142,6 +153,7 @@ V2Ray 传输配置，参阅 [V2Ray 传输层](/zh/configuration/shared/v2ray-tra
   "server_port": 443,
   "version": 4,
   "psk": "password",
+  "identity": true,
   "reuse": true,
   "tls": {
     "enabled": true,

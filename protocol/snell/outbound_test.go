@@ -126,6 +126,14 @@ func TestValidateECHTLSOptions(t *testing.T) {
 	}
 }
 
+func TestValidateIdentityOptions(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, validateIdentityOptions(option.SnellOutboundOptions{Version: 4, Identity: true}))
+	require.NoError(t, validateIdentityOptions(option.SnellOutboundOptions{Version: 6}))
+	require.ErrorContains(t, validateIdentityOptions(option.SnellOutboundOptions{Version: 6, Identity: true}), "requires version 4")
+}
+
 type stubClientTransport struct {
 	conn   net.Conn
 	dialed bool
