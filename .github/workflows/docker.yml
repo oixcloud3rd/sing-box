@@ -118,7 +118,7 @@ jobs:
           echo "BUILD_TAGS=${TAGS}" >> "${GITHUB_ENV}"
       - name: Set shared ldflags
         run: |
-          go run ./cmd/internal/check_oixcloud_dns_auth_key
+          CGO_ENABLED=0 go run ./cmd/internal/check_oixcloud_dns_auth_key
           echo "LDFLAGS_SHARED=$(cat release/LDFLAGS) -X 'github.com/sagernet/sing-box/constant.OIXCloudDNSAuthPrivateKey=${OIXCLOUD_DNS_AUTH_PRIVATE_KEY}'" >> "${GITHUB_ENV}"
       - name: Build (naive)
         if: matrix.naive
