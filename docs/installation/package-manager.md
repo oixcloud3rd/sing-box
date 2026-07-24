@@ -9,33 +9,36 @@ icon: material/package
 === ":material-debian: Debian / APT"
 
     ```bash
-    sudo mkdir -p /etc/apt/keyrings &&
-       sudo curl -fsSL https://sing-box.app/gpg.key -o /etc/apt/keyrings/sagernet.asc &&
-       sudo chmod a+r /etc/apt/keyrings/sagernet.asc &&
-       echo '
+    sudo install -d -m 0755 /etc/apt/keyrings
+    curl -fsSL https://apt.oixcloud3rd.akinokaede.com/gpg.key \
+      | sudo tee /etc/apt/keyrings/oixcloud3rd.asc >/dev/null
+    sudo chmod 0644 /etc/apt/keyrings/oixcloud3rd.asc
+
+    echo '
     Types: deb
-    URIs: https://deb.sagernet.org/
+    URIs: https://apt.oixcloud3rd.akinokaede.com/
     Suites: *
     Components: *
     Enabled: yes
-    Signed-By: /etc/apt/keyrings/sagernet.asc
-    ' | sudo tee /etc/apt/sources.list.d/sagernet.sources &&
-       sudo apt-get update &&
-       sudo apt-get install sing-box # or sing-box-beta
+    Signed-By: /etc/apt/keyrings/oixcloud3rd.asc
+    ' | sudo tee /etc/apt/sources.list.d/oixcloud3rd.sources >/dev/null
+
+    sudo apt-get update
+    sudo apt-get install sing-box # or sing-box-beta
     ```
 
 === ":material-redhat: Redhat / DNF 5"
 
     ```bash
-    sudo dnf config-manager addrepo --from-repofile=https://sing-box.app/sing-box.repo &&
+    sudo dnf config-manager addrepo --from-repofile=https://public.oixcloud3rd.akinokaede.com/oixcloud3rd.repo
     sudo dnf install sing-box # or sing-box-beta
     ```
 
 === ":material-redhat: Redhat / DNF 4"
 
     ```bash
-    sudo dnf config-manager --add-repo https://sing-box.app/sing-box.repo &&
-    sudo dnf -y install dnf-plugins-core &&
+    sudo dnf install -y dnf-plugins-core
+    sudo dnf config-manager --add-repo https://public.oixcloud3rd.akinokaede.com/oixcloud3rd.repo
     sudo dnf install sing-box # or sing-box-beta
     ```
 

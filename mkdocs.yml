@@ -1,8 +1,8 @@
 site_name: sing-box
-site_url: https://sing-box.sagernet.org/
+site_url: https://sing-box.oixcloud3rd.akinokaede.com/
 site_author: nekohasekai
-repo_url: https://github.com/SagerNet/sing-box
-repo_name: SagerNet/sing-box
+repo_url: https://github.com/oixcloud3rd/sing-box
+repo_name: oixcloud3rd/sing-box
 copyright: Copyright &copy; 2022 nekohasekai
 site_description: The universal proxy platform.
 remote_branch: docs

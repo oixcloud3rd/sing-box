@@ -284,7 +284,7 @@ docs:
 	venv/bin/mkdocs serve
 
 publish_docs:
-	venv/bin/mkdocs gh-deploy -m "Update" --force --ignore-version --no-history
+	venv/bin/mkdocs gh-deploy -r oixcloud3rd -b docs -m "Update" --force --ignore-version --no-history
 
 docs_install:
 	python3 -m venv venv
