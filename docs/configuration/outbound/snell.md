@@ -23,7 +23,6 @@ icon: material/new-box
   "obfs_host": "",
 
   "tls": {},
-  "transport": {},
 
   ... // Dial Fields
 }
@@ -133,18 +132,8 @@ The HTTP `Host` header sent when `obfs_mode` is `http`.
 TLS configuration, see [TLS](/configuration/shared/tls/).
 
 For oixCloud's proprietary Snell ECH-TLS extension, TLS must be enabled and `ech.enabled` must be `true`.
-
-#### transport
-
-==Version 4 only==
-
-V2Ray transport configuration, see [V2Ray Transport](/configuration/shared/v2ray-transport/).
-
-For oixCloud's proprietary Snell ECH-TLS extension, only WebSocket transport with a non-empty `path`
-is supported. It cannot be combined with `obfs_mode`.
-
-The resulting protocol stack is Snell v4 over WebSocket over TLS with ECH. No additional bytes are
-added to the Snell wire format.
+The TLS connection carries raw Snell v4 without a V2Ray transport layer and cannot be combined with
+`obfs_mode`. Configure `alpn` according to the server; current oixCloud deployments use `h2`.
 
 Example:
 
@@ -161,6 +150,7 @@ Example:
   "tls": {
     "enabled": true,
     "server_name": "public.example.com",
+    "alpn": ["h2"],
     "ech": {
       "enabled": true,
       "config": [
@@ -172,13 +162,6 @@ Example:
     "utls": {
       "enabled": true,
       "fingerprint": "chrome"
-    }
-  },
-  "transport": {
-    "type": "ws",
-    "path": "/snell",
-    "headers": {
-      "Host": "tunnel.example.com"
     }
   }
 }

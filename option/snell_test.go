@@ -21,6 +21,7 @@ func TestSnellOutboundECHTLSOptionsJSON(t *testing.T) {
 		"tls": {
 			"enabled": true,
 			"server_name": "public.example.com",
+			"alpn": "h2",
 			"ech": {
 				"enabled": true,
 				"config": [
@@ -33,13 +34,6 @@ func TestSnellOutboundECHTLSOptionsJSON(t *testing.T) {
 				"enabled": true,
 				"fingerprint": "chrome"
 			}
-		},
-		"transport": {
-			"type": "ws",
-			"path": "/snell",
-			"headers": {
-				"Host": "tunnel.example.com"
-			}
 		}
 	}`)
 	var options SnellOutboundOptions
@@ -47,11 +41,9 @@ func TestSnellOutboundECHTLSOptionsJSON(t *testing.T) {
 	require.True(t, options.Identity)
 	require.NotNil(t, options.TLS)
 	require.True(t, options.TLS.Enabled)
+	require.Equal(t, []string{"h2"}, []string(options.TLS.ALPN))
 	require.NotNil(t, options.TLS.ECH)
 	require.True(t, options.TLS.ECH.Enabled)
-	require.NotNil(t, options.Transport)
-	require.Equal(t, "ws", options.Transport.Type)
-	require.Equal(t, "/snell", options.Transport.WebsocketOptions.Path)
 
 	encoded, err := json.Marshal(options)
 	require.NoError(t, err)
@@ -72,10 +64,26 @@ func TestSnellOutboundLegacyOptionsJSON(t *testing.T) {
 	var options SnellOutboundOptions
 	require.NoError(t, json.Unmarshal(content, &options))
 	require.Nil(t, options.TLS)
-	require.Nil(t, options.Transport)
 	require.False(t, options.Identity)
 
 	encoded, err := json.Marshal(options)
 	require.NoError(t, err)
 	require.JSONEq(t, string(content), string(encoded))
+}
+
+func TestSnellOutboundV2RayTransportRejected(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`{
+		"server": "server.example.com",
+		"server_port": 443,
+		"version": 4,
+		"psk": "password",
+		"transport": {
+			"type": "ws",
+			"path": "/snell"
+		}
+	}`)
+	var options SnellOutboundOptions
+	require.ErrorContains(t, json.Unmarshal(content, &options), `unknown field "transport"`)
 }

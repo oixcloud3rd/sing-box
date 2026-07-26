@@ -81,7 +81,6 @@ type _SnellOutboundOptions struct {
 	ObfsOptions SnellObfsClientOptions `json:"-"`
 	V6Options   SnellV6Options         `json:"-"`
 	OutboundTLSOptionsContainer
-	Transport *V2RayTransportOptions `json:"transport,omitempty"`
 }
 
 type AbstractSnellOutboundOptions struct {
@@ -93,7 +92,6 @@ type AbstractSnellOutboundOptions struct {
 	Reuse    bool        `json:"reuse,omitempty"`
 	Network  NetworkList `json:"network,omitempty"`
 	OutboundTLSOptionsContainer
-	Transport *V2RayTransportOptions `json:"transport,omitempty"`
 }
 
 type SnellOutboundOptions _SnellOutboundOptions

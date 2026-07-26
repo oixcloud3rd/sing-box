@@ -23,7 +23,6 @@ icon: material/new-box
   "obfs_host": "",
 
   "tls": {},
-  "transport": {},
 
   ... // 拨号字段
 }
@@ -132,16 +131,8 @@ HTTP 混淆模式，`none` `http` 之一。
 TLS 配置，参阅 [TLS](/zh/configuration/shared/tls/)。
 
 用于 oixCloud 专有 Snell ECH-TLS 扩展时，必须启用 TLS，并将 `ech.enabled` 设为 `true`。
-
-#### transport
-
-==仅版本 4==
-
-V2Ray 传输配置，参阅 [V2Ray 传输层](/zh/configuration/shared/v2ray-transport/)。
-
-用于 oixCloud 专有 Snell ECH-TLS 扩展时，仅支持具有非空 `path` 的 WebSocket 传输，且不能与 `obfs_mode` 组合使用。
-
-最终协议栈为运行于 TLS with ECH WebSocket 之上的 Snell v4，不会向 Snell 线路协议添加额外字节。
+TLS 连接直接承载 raw Snell v4，不使用 V2Ray 传输层，且不能与 `obfs_mode` 组合使用。
+请根据服务端配置 `alpn`；当前 oixCloud 部署使用 `h2`。
 
 示例：
 
@@ -158,6 +149,7 @@ V2Ray 传输配置，参阅 [V2Ray 传输层](/zh/configuration/shared/v2ray-tra
   "tls": {
     "enabled": true,
     "server_name": "public.example.com",
+    "alpn": ["h2"],
     "ech": {
       "enabled": true,
       "config": [
@@ -169,13 +161,6 @@ V2Ray 传输配置，参阅 [V2Ray 传输层](/zh/configuration/shared/v2ray-tra
     "utls": {
       "enabled": true,
       "fingerprint": "chrome"
-    }
-  },
-  "transport": {
-    "type": "ws",
-    "path": "/snell",
-    "headers": {
-      "Host": "tunnel.example.com"
     }
   }
 }

@@ -9,10 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagernet/sing-box/adapter"
 	boxTLS "github.com/sagernet/sing-box/common/tls"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing-box/transport/v2raywebsocket"
 	snellprotocol "github.com/sagernet/sing-snell"
 	"github.com/sagernet/sing-snell/snellv4"
 	"github.com/sagernet/sing-snell/snellv5"
@@ -24,14 +22,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSnellECHTLSTransport(t *testing.T) {
+func TestSnellECHTLSRaw(t *testing.T) {
 	const (
 		psk        = "snell-ech-tls-test-password"
 		serverName = "snell.example.org"
 		publicName = "public.example.org"
+		alpn       = "h2"
 	)
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
 
 	echConfig, echKey, err := boxTLS.ECHKeygenDefault(publicName)
 	require.NoError(t, err)
@@ -39,6 +37,7 @@ func TestSnellECHTLSTransport(t *testing.T) {
 		Enabled:    true,
 		ServerName: serverName,
 		Insecure:   true,
+		ALPN:       []string{alpn},
 		ECH: &option.InboundECHOptions{
 			Enabled: true,
 			Key:     []string{echKey},
@@ -51,24 +50,48 @@ func TestSnellECHTLSTransport(t *testing.T) {
 		Handler: echTLSEchoHandler{},
 	})
 	require.NoError(t, err)
-	websocketServer, err := v2raywebsocket.NewServer(ctx, logger.NOP(), option.V2RayWebsocketOptions{
-		Path: "/snell",
-	}, serverTLS, &snellServiceHandler{service: service})
-	require.NoError(t, err)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		websocketServer.Close()
+		cancel()
 		listener.Close()
+		serverTLS.Close()
 	})
+	serverStates := make(chan boxTLS.ConnectionState, 2)
+	serverErrors := make(chan error, 2)
 	go func() {
-		_ = websocketServer.Serve(listener)
+		for {
+			rawConn, err := listener.Accept()
+			if err != nil {
+				select {
+				case <-ctx.Done():
+				default:
+					serverErrors <- err
+				}
+				return
+			}
+			go func(rawConn net.Conn) {
+				tlsConn, err := boxTLS.ServerHandshake(ctx, rawConn, serverTLS)
+				if err != nil {
+					rawConn.Close()
+					serverErrors <- err
+					return
+				}
+				serverStates <- tlsConn.ConnectionState()
+				err = service.NewConnection(ctx, tlsConn, M.SocksaddrFromNet(rawConn.RemoteAddr()), nil)
+				if err != nil {
+					tlsConn.Close()
+					serverErrors <- err
+				}
+			}(rawConn)
+		}
 	}()
 
 	clientTLS, err := boxTLS.NewClient(ctx, logger.NOP(), serverName, option.OutboundTLSOptions{
 		Enabled:    true,
 		ServerName: serverName,
 		Insecure:   true,
+		ALPN:       []string{alpn},
 		ECH: &option.OutboundECHOptions{
 			Enabled: true,
 			Config:  []string{echConfig},
@@ -76,24 +99,23 @@ func TestSnellECHTLSTransport(t *testing.T) {
 	})
 	require.NoError(t, err)
 	serverAddr := M.SocksaddrFromNet(listener.Addr())
-	websocketClient, err := v2raywebsocket.NewClient(ctx, N.SystemDialer, serverAddr, option.V2RayWebsocketOptions{
-		Path: "/snell",
-	}, clientTLS)
-	require.NoError(t, err)
-	t.Cleanup(func() { websocketClient.Close() })
+	rawTLSDialer := boxTLS.NewDialer(N.SystemDialer, clientTLS)
 
 	client, err := snellv4.NewClient(snellv4.ClientOptions{
 		PSK:    []byte(psk),
 		Reuse:  true,
-		Dialer: &transportDialer{transport: websocketClient},
+		Dialer: rawTLSDialer,
 		Server: serverAddr,
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
 
-	for _, payload := range [][]byte{[]byte("first reused stream"), []byte("second reused stream")} {
+	for index, payload := range [][]byte{[]byte("first reused stream"), []byte("second reused stream")} {
 		conn, err := client.DialContext(ctx, M.ParseSocksaddr("destination.example:443"))
 		require.NoError(t, err)
+		if index == 0 {
+			assertSnellECHTLSState(t, serverStates, serverErrors, alpn)
+		}
 		_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
 		_, err = conn.Write(payload)
 		require.NoError(t, err)
@@ -104,10 +126,11 @@ func TestSnellECHTLSTransport(t *testing.T) {
 		require.NoError(t, conn.Close())
 	}
 
-	rawPacketConn, err := websocketClient.DialContext(ctx)
+	rawPacketConn, err := rawTLSDialer.DialContext(ctx, N.NetworkTCP, serverAddr)
 	require.NoError(t, err)
 	packetConn, err := client.DialPacketConn(rawPacketConn)
 	require.NoError(t, err)
+	assertSnellECHTLSState(t, serverStates, serverErrors, alpn)
 	t.Cleanup(func() { packetConn.Close() })
 	_ = rawPacketConn.SetDeadline(time.Now().Add(10 * time.Second))
 	packetPayload := make([]byte, 1200)
@@ -127,13 +150,16 @@ func TestSnellECHTLSTransport(t *testing.T) {
 	responseBuffer.Release()
 }
 
-type snellServiceHandler struct {
-	service snellprotocol.Service
-}
-
-func (h *snellServiceHandler) NewConnectionEx(ctx context.Context, conn net.Conn, source M.Socksaddr, destination M.Socksaddr, onClose N.CloseHandlerFunc) {
-	if err := h.service.NewConnection(ctx, conn, source, onClose); err != nil {
-		conn.Close()
+func assertSnellECHTLSState(t *testing.T, states <-chan boxTLS.ConnectionState, serverErrors <-chan error, alpn string) {
+	t.Helper()
+	select {
+	case state := <-states:
+		require.True(t, state.ECHAccepted)
+		require.Equal(t, alpn, state.NegotiatedProtocol)
+	case err := <-serverErrors:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for raw ECH-TLS handshake")
 	}
 }
 
@@ -188,7 +214,4 @@ func (echTLSEchoHandler) NewPacketConnectionEx(ctx context.Context, conn N.Packe
 	}()
 }
 
-var (
-	_ adapter.V2RayServerTransportHandler = (*snellServiceHandler)(nil)
-	_ snellprotocol.Handler               = echTLSEchoHandler{}
-)
+var _ snellprotocol.Handler = echTLSEchoHandler{}
