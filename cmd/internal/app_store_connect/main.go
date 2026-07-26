@@ -49,17 +49,20 @@ func main() {
 	}
 }
 
-const (
-	appID   = "6673731168"
-	groupID = "5c5f3b78-b7a0-40c0-bcad-e6ef87bbefda"
-)
+func requiredEnvironment(name string) string {
+	value := os.Getenv(name)
+	if value == "" {
+		log.Fatal(name, " is not set")
+	}
+	return value
+}
 
 func createClient(expireDuration time.Duration) *asc.Client {
-	privateKey, err := os.ReadFile(os.Getenv("ASC_KEY_PATH"))
+	privateKey, err := os.ReadFile(requiredEnvironment("ASC_KEY_PATH"))
 	if err != nil {
 		log.Fatal(err)
 	}
-	tokenConfig, err := asc.NewTokenConfig(os.Getenv("ASC_KEY_ID"), os.Getenv("ASC_KEY_ISSUER_ID"), expireDuration, privateKey)
+	tokenConfig, err := asc.NewTokenConfig(requiredEnvironment("ASC_KEY_ID"), requiredEnvironment("ASC_KEY_ISSUER_ID"), expireDuration, privateKey)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -67,6 +70,7 @@ func createClient(expireDuration time.Duration) *asc.Client {
 }
 
 func fetchMacOSVersion(ctx context.Context) error {
+	appID := requiredEnvironment("ASC_APP_ID")
 	client := createClient(time.Minute)
 	versions, _, err := client.Apps.ListAppStoreVersionsForApp(ctx, appID, &asc.ListAppStoreVersionsQuery{
 		FilterPlatform: []string{"MAC_OS"},
@@ -127,6 +131,39 @@ func publishTestflight(ctx context.Context) error {
 	}
 
 	client := createClient(20 * time.Minute)
+	appID := requiredEnvironment("ASC_APP_ID")
+	groupID := requiredEnvironment("ASC_TESTFLIGHT_GROUP_ID")
+	testflightType := os.Getenv("ASC_TESTFLIGHT_TYPE")
+	if testflightType == "" {
+		testflightType = "Internal"
+	}
+	var internalTesting bool
+	switch testflightType {
+	case "Internal":
+		internalTesting = true
+	case "External":
+	default:
+		return E.New("unknown TestFlight type: ", testflightType)
+	}
+
+	log.Info(tag, " validate ", strings.ToLower(testflightType), " group")
+	groupResponse, _, err := client.TestFlight.GetBetaGroup(ctx, groupID, nil)
+	if err != nil {
+		return err
+	}
+	if groupResponse.Data.Attributes == nil || groupResponse.Data.Attributes.IsInternalGroup == nil {
+		return E.New("beta group ", groupID, " does not report its testing type")
+	}
+	if *groupResponse.Data.Attributes.IsInternalGroup != internalTesting {
+		return E.New("beta group ", groupID, " does not match TestFlight type ", testflightType)
+	}
+	groupAppResponse, _, err := client.TestFlight.GetAppForBetaGroup(ctx, groupID, nil)
+	if err != nil {
+		return err
+	}
+	if groupAppResponse.Data.ID != appID {
+		return E.New("beta group ", groupID, " does not belong to app ", appID)
+	}
 
 	log.Info(tag, " list build IDs")
 	buildIDsResponse, _, err := client.TestFlight.ListBuildIDsForBetaGroup(ctx, groupID, nil)
@@ -169,9 +206,12 @@ func publishTestflight(ctx context.Context) error {
 			return *it.Attributes.Locale == "en-US"
 		})
 		if localization.ID == "" {
-			log.Fatal(string(platform), " ", tag, " no en-US localization found")
-		}
-		if localization.Attributes == nil || localization.Attributes.WhatsNew == nil || *localization.Attributes.WhatsNew == "" {
+			if internalTesting {
+				log.Warn(string(platform), " ", tag, " no en-US localization found")
+			} else {
+				return E.New(string(platform), " ", tag, " no en-US localization found")
+			}
+		} else if localization.Attributes == nil || localization.Attributes.WhatsNew == nil || *localization.Attributes.WhatsNew == "" {
 			log.Info(string(platform), " ", tag, " update localization")
 			_, _, err = client.TestFlight.UpdateBetaBuildLocalization(ctx, localization.ID, common.Ptr(releaseNotes))
 			if err != nil {
@@ -186,6 +226,9 @@ func publishTestflight(ctx context.Context) error {
 			continue
 		} else if err != nil {
 			return err
+		}
+		if internalTesting {
+			break
 		}
 		log.Info(string(platform), " ", tag, " list submissions")
 		betaSubmissions, _, err := client.TestFlight.ListBetaAppReviewSubmissions(ctx, &asc.ListBetaAppReviewSubmissionsQuery{
@@ -223,6 +266,7 @@ func cancelAppStore(ctx context.Context, platform string) error {
 	if err != nil {
 		return err
 	}
+	appID := requiredEnvironment("ASC_APP_ID")
 	client := createClient(time.Minute)
 	for {
 		log.Info(platform, " list versions")
@@ -264,6 +308,7 @@ func prepareAppStore(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	appID := requiredEnvironment("ASC_APP_ID")
 	client := createClient(time.Minute)
 	for _, platform := range []asc.Platform{
 		asc.PlatformIOS,
@@ -404,6 +449,7 @@ func publishAppStore(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	appID := requiredEnvironment("ASC_APP_ID")
 	client := createClient(time.Minute)
 	for _, platform := range []asc.Platform{
 		asc.PlatformIOS,

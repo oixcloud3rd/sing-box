@@ -18,7 +18,15 @@ on:
           - Android
           - Windows
           - Linux
+          - Apple
+          - iOS
+          - macOS
+          - tvOS
           - iOS-jailbreak
+      test_message:
+        description: "TestFlight test message"
+        required: false
+        type: string
   push:
     branches:
       - stable-patch
@@ -460,6 +468,7 @@ jobs:
     runs-on: macos-latest
     needs:
       - calculate_version
+      - build_apple_library
     strategy:
       matrix:
         include:
@@ -1111,9 +1120,9 @@ jobs:
           name: binary-linux-client-${{ matrix.desktop_arch }}
           path: 'dist'
   build_apple_library:
-    name: Build iOS jailbreak library
-    runs-on: macos-26
-    if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'iOS-jailbreak'
+    name: Build Apple library (${{ matrix.artifact }})
+    runs-on: ${{ matrix.build && 'macos-26' || 'ubuntu-latest' }}
+    if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'iOS' || inputs.build == 'macOS' || inputs.build == 'tvOS' || inputs.build == 'iOS-jailbreak'
     needs:
       - calculate_version
     strategy:
@@ -1122,7 +1131,16 @@ jobs:
         include:
           - artifact: ios-arm64
             platform: ios/arm64
-            build: true
+            build: ${{ github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'iOS' || inputs.build == 'iOS-jailbreak' }}
+          - artifact: tvos-arm64
+            platform: tvos/arm64
+            build: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'tvOS') }}
+          - artifact: macos-arm64
+            platform: macos/arm64
+            build: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'macOS') }}
+          - artifact: macos-amd64
+            platform: macos/amd64
+            build: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'macOS') }}
     steps:
       - name: Checkout
         if: matrix.build
@@ -1169,7 +1187,7 @@ jobs:
           compression-level: 1
   build_apple:
     name: Build iOS jailbreak client
-    runs-on: macos-26
+    runs-on: ${{ matrix.if && 'macos-26' || 'ubuntu-latest' }}
     if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'iOS-jailbreak'
     needs:
       - calculate_version
@@ -1188,7 +1206,7 @@ jobs:
             destination: ''
             archive: ''
             upload: ''
-    steps:
+    steps: &build_apple_steps
       - name: Checkout
         if: matrix.if
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
@@ -1224,7 +1242,7 @@ jobs:
           git tag v${{ needs.calculate_version.outputs.version }} -f
           echo "VERSION=${{ needs.calculate_version.outputs.version }}" >> "$GITHUB_ENV"
       - name: Checkout main branch
-        if: matrix.if && github.ref == 'refs/heads/stable-patch'
+        if: matrix.if && github.ref == 'refs/heads/stable-patch' && github.event_name != 'workflow_dispatch'
         run: |-
           cd clients/apple
           git checkout main-patch
@@ -1244,20 +1262,113 @@ jobs:
         if: matrix.if
         uses: actions/cache@v4
         with:
-          path: clients/apple/build/jailbreak/DerivedData
+          path: ${{ matrix.type == 'jailbreak' && 'clients/apple/build/jailbreak/DerivedData' || format('{0}/DerivedData', runner.temp) }}
           key: apple-derived-data-${{ matrix.type }}-${{ matrix.platform }}-${{ matrix.variant || 'default' }}-${{ hashFiles('clients/apple/sing-box.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-${{ github.sha }}
           restore-keys: |
             apple-derived-data-${{ matrix.type }}-${{ matrix.platform }}-${{ matrix.variant || 'default' }}-${{ hashFiles('clients/apple/sing-box.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-
             apple-derived-data-${{ matrix.type }}-${{ matrix.platform }}-${{ matrix.variant || 'default' }}-
+      - name: Setup App Store Connect key
+        if: matrix.if && matrix.type != 'jailbreak' && github.event_name == 'workflow_dispatch'
+        run: |-
+          set -euo pipefail
+          if [[ ! "$ASC_APP_ID" =~ ^[0-9]+$ ]]; then
+            echo "ASC_APP_ID must be a numeric App Store Connect app ID" >&2
+            exit 1
+          fi
+          ASC_TESTFLIGHT_TYPE=${ASC_TESTFLIGHT_TYPE:-Internal}
+          if [[ "$ASC_TESTFLIGHT_TYPE" != "Internal" && "$ASC_TESTFLIGHT_TYPE" != "External" ]]; then
+            echo "ASC_TESTFLIGHT_TYPE must be Internal or External" >&2
+            exit 1
+          fi
+          if [[ -z "$ASC_TESTFLIGHT_GROUP_ID" ]]; then
+            echo "ASC_TESTFLIGHT_GROUP_ID must not be empty" >&2
+            exit 1
+          fi
+          ASC_KEY_PATH=$RUNNER_TEMP/AuthKey.p8
+          echo -n "$ASC_KEY" | base64 --decode -o "$ASC_KEY_PATH"
+          echo "ASC_KEY_PATH=$ASC_KEY_PATH" >> "$GITHUB_ENV"
+          echo "ASC_KEY_ID=$ASC_KEY_ID" >> "$GITHUB_ENV"
+          echo "ASC_KEY_ISSUER_ID=$ASC_KEY_ISSUER_ID" >> "$GITHUB_ENV"
+          echo "ASC_APP_ID=$ASC_APP_ID" >> "$GITHUB_ENV"
+          echo "ASC_TESTFLIGHT_GROUP_ID=$ASC_TESTFLIGHT_GROUP_ID" >> "$GITHUB_ENV"
+          echo "ASC_TESTFLIGHT_TYPE=$ASC_TESTFLIGHT_TYPE" >> "$GITHUB_ENV"
+        env:
+          ASC_KEY: ${{ secrets.ASC_KEY }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_ISSUER_ID: ${{ secrets.ASC_KEY_ISSUER_ID }}
+          ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
+          ASC_TESTFLIGHT_GROUP_ID: ${{ secrets.ASC_TESTFLIGHT_GROUP_ID }}
+          ASC_TESTFLIGHT_TYPE: ${{ vars.ASC_TESTFLIGHT_TYPE }}
+      - name: Configure Apple Team ID
+        if: matrix.if && matrix.type != 'jailbreak'
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |-
+          set -euo pipefail
+          if [[ ! "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+            echo "APPLE_TEAM_ID must be a 10-character Apple Team ID" >&2
+            exit 1
+          fi
+          echo "::add-mask::$APPLE_TEAM_ID"
+          printf 'DEVELOPMENT_TEAM = %s\n' "$APPLE_TEAM_ID" > clients/apple/Configuration/Signing.xcconfig
+      - name: Install Apple provisioning profiles
+        if: matrix.if && matrix.type != 'jailbreak'
+        run: |-
+          PROFILES_ZIP_PATH=$RUNNER_TEMP/AppleProvisioningProfiles.zip
+          printf '%s%s%s%s%s%s%s%s' \
+            "$PROVISIONING_PROFILES_1" \
+            "$PROVISIONING_PROFILES_2" \
+            "$PROVISIONING_PROFILES_3" \
+            "$PROVISIONING_PROFILES_4" \
+            "$PROVISIONING_PROFILES_5" \
+            "$PROVISIONING_PROFILES_6" \
+            "$PROVISIONING_PROFILES_7" \
+            "$PROVISIONING_PROFILES_8" \
+            | base64 --decode -o "$PROFILES_ZIP_PATH"
+          PROFILES_PATH="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+          mkdir -p "$PROFILES_PATH"
+          unzip -q "$PROFILES_ZIP_PATH" -d "$PROFILES_PATH"
+        env:
+          PROVISIONING_PROFILES_1: ${{ secrets.APPLE_PROVISIONING_PROFILES_1 }}
+          PROVISIONING_PROFILES_2: ${{ secrets.APPLE_PROVISIONING_PROFILES_2 }}
+          PROVISIONING_PROFILES_3: ${{ secrets.APPLE_PROVISIONING_PROFILES_3 }}
+          PROVISIONING_PROFILES_4: ${{ secrets.APPLE_PROVISIONING_PROFILES_4 }}
+          PROVISIONING_PROFILES_5: ${{ secrets.APPLE_PROVISIONING_PROFILES_5 }}
+          PROVISIONING_PROFILES_6: ${{ secrets.APPLE_PROVISIONING_PROFILES_6 }}
+          PROVISIONING_PROFILES_7: ${{ secrets.APPLE_PROVISIONING_PROFILES_7 }}
+          PROVISIONING_PROFILES_8: ${{ secrets.APPLE_PROVISIONING_PROFILES_8 }}
+      - name: Setup Apple Development certificate
+        if: matrix.if && matrix.type != 'jailbreak'
+        run: |-
+          CERTIFICATE_PATH=$RUNNER_TEMP/AppleDevelopment.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/apple-development.keychain-db
+          echo -n "$APPLE_DEVELOPMENT_CERTIFICATES_P12" | base64 --decode -o "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -d user -s "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          echo "APPLE_DEVELOPMENT_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+        env:
+          APPLE_DEVELOPMENT_CERTIFICATES_P12: ${{ secrets.APPLE_DEVELOPMENT_CERTIFICATES_P12 }}
+          P12_PASSWORD: ${{ secrets.APPLE_DEVELOPMENT_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
       - name: Install jailbreak packaging tools
         if: matrix.if && matrix.type == 'jailbreak'
         run: |-
           brew install dpkg ldid
+      - name: Trust build plugins
+        if: matrix.if && matrix.type != 'jailbreak'
+        run: |-
+          defaults write com.apple.dt.Xcode IDESkipPackagePluginFingerprintValidatation -bool YES
       - name: Download library
         if: matrix.if
         uses: actions/download-artifact@v4
         with:
-          pattern: libbox-apple-ios-*
+          pattern: libbox-apple-${{ matrix.platform }}-*
           path: libbox-inputs
           merge-multiple: true
       - name: Prepare library
@@ -1275,10 +1386,50 @@ jobs:
           go run ./cmd/internal/merge_apple_xcframework \
             -output clients/apple/Libbox.xcframework \
             "${library_inputs[@]}"
+      - name: Update macOS version
+        if: matrix.if && matrix.name == 'macOS' && github.event_name == 'workflow_dispatch'
+        run: |-
+          MACOS_PROJECT_VERSION=$(go run -v ./cmd/internal/app_store_connect next_macos_project_version)
+          echo "MACOS_PROJECT_VERSION=$MACOS_PROJECT_VERSION"
+          echo "MACOS_PROJECT_VERSION=$MACOS_PROJECT_VERSION" >> "$GITHUB_ENV"
       - name: Update version
-        if: matrix.if
+        if: matrix.if && matrix.name != 'iOS'
         run: |-
           go run -v ./cmd/internal/update_apple_version --ci
+      - name: Archive App Store build
+        if: matrix.if && matrix.type == 'app-store'
+        run: |-
+          cd clients/apple
+          xcodebuild archive \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -scheme "${{ matrix.scheme }}" \
+            -configuration Release \
+            -destination "${{ matrix.destination }}" \
+            -archivePath "${{ matrix.archive }}"
+        env:
+          DISABLE_SWIFTLINT: "1"
+      - name: Upload to App Store Connect
+        if: matrix.if && matrix.type == 'app-store' && github.event_name == 'workflow_dispatch'
+        run: |-
+          go run -v ./cmd/internal/app_store_connect cancel_app_store ${{ matrix.platform }}
+          cd clients/apple
+          xcodebuild -exportArchive \
+            -archivePath "${{ matrix.archive }}" \
+            -exportOptionsPlist "${{ matrix.upload }}" \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_KEY_ISSUER_ID"
+      - name: Publish to TestFlight
+        if: matrix.if && matrix.type == 'app-store' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/testing-patch'
+        run: |-
+          arguments=(publish_testflight "${{ matrix.platform }}")
+          if [[ -n "$TEST_MESSAGE" ]]; then
+            arguments+=("$TEST_MESSAGE")
+          fi
+          go run -v ./cmd/internal/app_store_connect "${arguments[@]}"
+        env:
+          TEST_MESSAGE: ${{ inputs.test_message }}
       - name: Build jailbreak package
         if: matrix.if && matrix.type == 'jailbreak'
         run: |-
@@ -1291,6 +1442,7 @@ jobs:
         if: matrix.if
         run: |-
           du -sh "$RUNNER_TEMP/SourcePackages"/* 2>/dev/null || true
+          du -sh "$RUNNER_TEMP/DerivedData" 2>/dev/null || true
           du -sh clients/apple/build/jailbreak/DerivedData 2>/dev/null || true
       - name: Prune Swift package repositories
         if: matrix.if
@@ -1301,6 +1453,48 @@ jobs:
         with:
           name: binary-apple-jailbreak
           path: 'dist'
+  build_apple_app_store:
+    name: Build Apple App Store clients
+    runs-on: ${{ matrix.if && 'macos-26' || 'ubuntu-latest' }}
+    if: github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'iOS' || inputs.build == 'macOS' || inputs.build == 'tvOS')
+    needs:
+      - calculate_version
+      - build_apple_library
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iOS
+            if: ${{ inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'iOS' }}
+            type: app-store
+            platform: ios
+            scheme: SFI
+            destination: 'generic/platform=iOS'
+            archive: build/SFI.xcarchive
+            upload: SFI/Upload.plist
+            variant: ''
+            library_arch: ''
+          - name: macOS
+            if: ${{ inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'macOS' }}
+            type: app-store
+            platform: macos
+            scheme: SFM
+            destination: 'generic/platform=macOS'
+            archive: build/SFM.xcarchive
+            upload: SFI/Upload.plist
+            variant: ''
+            library_arch: ''
+          - name: tvOS
+            if: ${{ inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'tvOS' }}
+            type: app-store
+            platform: tvos
+            scheme: SFT
+            destination: 'generic/platform=tvOS'
+            archive: build/SFT.xcarchive
+            upload: SFI/Upload.plist
+            variant: ''
+            library_arch: ''
+    steps: *build_apple_steps
   upload:
     name: Upload builds
     if: "!failure() && github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Binary' || inputs.build == 'Android' || inputs.build == 'Windows' || inputs.build == 'Linux' || inputs.build == 'iOS-jailbreak')"
@@ -1385,6 +1579,7 @@ jobs:
       - build_linux_client
       - build_apple_library
       - build_apple
+      - build_apple_app_store
       - upload
     steps:
       - name: Delete superseded caches
