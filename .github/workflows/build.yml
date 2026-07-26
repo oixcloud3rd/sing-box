@@ -21,7 +21,7 @@ on:
           - Apple
           - iOS
           - macOS
-          - tvOS
+          # - tvOS
           - iOS-jailbreak
       test_message:
         description: "TestFlight test message"
@@ -1119,7 +1119,7 @@ jobs:
   build_apple_library:
     name: Build Apple library (${{ matrix.artifact }})
     runs-on: ${{ matrix.build && 'macos-26' || 'ubuntu-latest' }}
-    if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'iOS' || inputs.build == 'macOS' || inputs.build == 'tvOS' || inputs.build == 'iOS-jailbreak'
+    if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'iOS' || inputs.build == 'macOS' || inputs.build == 'iOS-jailbreak'
     needs:
       - calculate_version
     strategy:
@@ -1129,9 +1129,10 @@ jobs:
           - artifact: ios-arm64
             platform: ios/arm64
             build: ${{ github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'iOS' || inputs.build == 'iOS-jailbreak' }}
-          - artifact: tvos-arm64
-            platform: tvos/arm64
-            build: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'tvOS') }}
+          # SFT is disabled until a tvOS development signing device is available.
+          # - artifact: tvos-arm64
+          #   platform: tvos/arm64
+          #   build: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'tvOS') }}
           - artifact: macos-arm64
             platform: macos/arm64
             build: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'macOS') }}
@@ -1453,7 +1454,7 @@ jobs:
   build_apple_app_store:
     name: Build Apple App Store clients
     runs-on: ${{ matrix.if && 'macos-26' || 'ubuntu-latest' }}
-    if: github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'iOS' || inputs.build == 'macOS' || inputs.build == 'tvOS')
+    if: github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'iOS' || inputs.build == 'macOS')
     needs:
       - calculate_version
       - build_apple_library
@@ -1481,16 +1482,17 @@ jobs:
             upload: SFI/Upload.plist
             variant: ''
             library_arch: ''
-          - name: tvOS
-            if: ${{ inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'tvOS' }}
-            type: app-store
-            platform: tvos
-            scheme: SFT
-            destination: 'generic/platform=tvOS'
-            archive: build/SFT.xcarchive
-            upload: SFI/Upload.plist
-            variant: ''
-            library_arch: ''
+          # SFT is disabled until a tvOS development signing device is available.
+          # - name: tvOS
+          #   if: ${{ inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'tvOS' }}
+          #   type: app-store
+          #   platform: tvos
+          #   scheme: SFT
+          #   destination: 'generic/platform=tvOS'
+          #   archive: build/SFT.xcarchive
+          #   upload: SFI/Upload.plist
+          #   variant: ''
+          #   library_arch: ''
     steps: *build_apple_steps
   upload:
     name: Upload builds

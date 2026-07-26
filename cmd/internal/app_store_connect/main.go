@@ -72,34 +72,28 @@ func createClient(expireDuration time.Duration) *asc.Client {
 func fetchMacOSVersion(ctx context.Context) error {
 	appID := requiredEnvironment("ASC_APP_ID")
 	client := createClient(time.Minute)
-	versions, _, err := client.Apps.ListAppStoreVersionsForApp(ctx, appID, &asc.ListAppStoreVersionsQuery{
-		FilterPlatform: []string{"MAC_OS"},
+	builds, _, err := client.Builds.ListBuilds(ctx, &asc.ListBuildsQuery{
+		FilterApp:                       []string{appID},
+		FilterPreReleaseVersionPlatform: []string{string(asc.PlatformMACOS)},
+		Sort:                            []string{"-uploadedDate"},
+		Limit:                           1,
 	})
 	if err != nil {
 		return err
 	}
-	var versionID string
-findVersion:
-	for _, version := range versions.Data {
-		switch *version.Attributes.AppStoreState {
-		case asc.AppStoreVersionStateReadyForSale,
-			asc.AppStoreVersionStatePendingDeveloperRelease:
-			versionID = version.ID
-			break findVersion
+	nextVersion := 1
+	if len(builds.Data) > 0 {
+		latestBuild := builds.Data[0]
+		if latestBuild.Attributes == nil || latestBuild.Attributes.Version == nil {
+			return E.New("latest macos build has no version")
 		}
+		latestVersion, err := strconv.Atoi(*latestBuild.Attributes.Version)
+		if err != nil {
+			return E.Cause(err, "parse latest macos build version")
+		}
+		nextVersion = latestVersion + 1
 	}
-	if versionID == "" {
-		return E.New("no version found")
-	}
-	latestBuild, _, err := client.Builds.GetBuildForAppStoreVersion(ctx, versionID, &asc.GetBuildForAppStoreVersionQuery{})
-	if err != nil {
-		return err
-	}
-	versionInt, err := strconv.Atoi(*latestBuild.Data.Attributes.Version)
-	if err != nil {
-		return E.Cause(err, "parse version code")
-	}
-	os.Stdout.WriteString(F.ToString(versionInt+1, "\n"))
+	_, err = os.Stdout.WriteString(strconv.Itoa(nextVersion) + "\n")
 	return nil
 }
 
