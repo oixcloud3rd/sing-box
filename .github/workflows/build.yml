@@ -1348,7 +1348,11 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           security default-keychain -d user -s "$KEYCHAIN_PATH"
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          SIGNING_IDENTITIES=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH")
+          while IFS= read -r DEVELOPER_NAME; do
+            [[ -n "$DEVELOPER_NAME" ]] && echo "::add-mask::$DEVELOPER_NAME"
+          done < <(printf '%s\n' "$SIGNING_IDENTITIES" | sed -nE 's/.*"Apple (Development|Distribution): (.*) \([^)]*\)".*/\2/p' | sort -u)
+          printf '%s\n' "$SIGNING_IDENTITIES"
           echo "APPLE_DEVELOPMENT_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
         env:
           APPLE_DEVELOPMENT_CERTIFICATES_P12: ${{ secrets.APPLE_DEVELOPMENT_CERTIFICATES_P12 }}
