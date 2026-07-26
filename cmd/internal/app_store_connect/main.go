@@ -72,28 +72,40 @@ func createClient(expireDuration time.Duration) *asc.Client {
 func fetchMacOSVersion(ctx context.Context) error {
 	appID := requiredEnvironment("ASC_APP_ID")
 	client := createClient(time.Minute)
-	builds, _, err := client.Builds.ListBuilds(ctx, &asc.ListBuildsQuery{
-		FilterApp:                       []string{appID},
-		FilterPreReleaseVersionPlatform: []string{string(asc.PlatformMACOS)},
-		Sort:                            []string{"-uploadedDate"},
-		Limit:                           1,
+	versions, _, err := client.Apps.ListAppStoreVersionsForApp(ctx, appID, &asc.ListAppStoreVersionsQuery{
+		FilterPlatform: []string{"MAC_OS"},
 	})
 	if err != nil {
 		return err
 	}
-	nextVersion := 1
-	if len(builds.Data) > 0 {
-		latestBuild := builds.Data[0]
-		if latestBuild.Attributes == nil || latestBuild.Attributes.Version == nil {
-			return E.New("latest macos build has no version")
+	var versionID string
+findVersion:
+	for _, version := range versions.Data {
+		if version.Attributes == nil || version.Attributes.AppStoreState == nil {
+			continue
 		}
-		latestVersion, err := strconv.Atoi(*latestBuild.Attributes.Version)
-		if err != nil {
-			return E.Cause(err, "parse latest macos build version")
+		switch *version.Attributes.AppStoreState {
+		case asc.AppStoreVersionStateReadyForSale,
+			asc.AppStoreVersionStatePendingDeveloperRelease:
+			versionID = version.ID
+			break findVersion
 		}
-		nextVersion = latestVersion + 1
 	}
-	_, err = os.Stdout.WriteString(strconv.Itoa(nextVersion) + "\n")
+	versionInt := 0
+	if versionID != "" {
+		latestBuild, _, err := client.Builds.GetBuildForAppStoreVersion(ctx, versionID, &asc.GetBuildForAppStoreVersionQuery{})
+		if err != nil {
+			return err
+		}
+		if latestBuild.Data.Attributes == nil || latestBuild.Data.Attributes.Version == nil {
+			return E.New("latest macos app store build has no version")
+		}
+		versionInt, err = strconv.Atoi(*latestBuild.Data.Attributes.Version)
+		if err != nil {
+			return E.Cause(err, "parse version code")
+		}
+	}
+	_, err = os.Stdout.WriteString(F.ToString(versionInt+1, "\n"))
 	return nil
 }
 
