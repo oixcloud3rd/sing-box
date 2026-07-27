@@ -10,10 +10,8 @@ import (
 )
 
 type _SnellInboundOptions struct {
-	ListenOptions
-	Version     int                    `json:"version" enum:"5,6"`
-	PSK         string                 `json:"psk"`
-	Users       []SnellUser            `json:"users,omitempty"`
+	Version int `json:"version" enum:"5,6"`
+	AbstractSnellInboundOptions
 	ObfsOptions SnellObfsServerOptions `json:"-"`
 	V6Options   SnellV6Options         `json:"-"`
 }
@@ -70,17 +68,10 @@ func (o SnellInboundOptions) DescribeSchema(builder schema.Builder) (*schema.Nod
 }
 
 type _SnellOutboundOptions struct {
-	DialerOptions
-	ServerOptions
-	Version     int                    `json:"version" enum:"4,6"`
-	PSK         string                 `json:"psk"`
-	UserKey     string                 `json:"userkey,omitempty"`
-	Identity    bool                   `json:"identity,omitempty"`
-	Reuse       bool                   `json:"reuse,omitempty"`
-	Network     NetworkList            `json:"network,omitempty"`
+	Version int `json:"version" enum:"4,6"`
+	AbstractSnellOutboundOptions
 	ObfsOptions SnellObfsClientOptions `json:"-"`
 	V6Options   SnellV6Options         `json:"-"`
-	OutboundTLSOptionsContainer
 }
 
 type AbstractSnellOutboundOptions struct {

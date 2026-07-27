@@ -11,12 +11,14 @@ import (
 func newECHTLSOptions() option.SnellOutboundOptions {
 	return option.SnellOutboundOptions{
 		Version: 4,
-		PSK:     "password",
-		OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
-			TLS: &option.OutboundTLSOptions{
-				Enabled: true,
-				ALPN:    []string{"h2"},
-				ECH:     &option.OutboundECHOptions{Enabled: true},
+		AbstractSnellOutboundOptions: option.AbstractSnellOutboundOptions{
+			PSK: "password",
+			OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
+				TLS: &option.OutboundTLSOptions{
+					Enabled: true,
+					ALPN:    []string{"h2"},
+					ECH:     &option.OutboundECHOptions{Enabled: true},
+				},
 			},
 		},
 	}
@@ -25,7 +27,12 @@ func newECHTLSOptions() option.SnellOutboundOptions {
 func TestValidateECHTLSOptions(t *testing.T) {
 	t.Parallel()
 
-	legacyOptions := option.SnellOutboundOptions{Version: 4, PSK: "password"}
+	legacyOptions := option.SnellOutboundOptions{
+		Version: 4,
+		AbstractSnellOutboundOptions: option.AbstractSnellOutboundOptions{
+			PSK: "password",
+		},
+	}
 	enabled, err := validateECHTLSOptions(legacyOptions)
 	require.NoError(t, err)
 	require.False(t, enabled)
@@ -90,7 +97,17 @@ func TestValidateECHTLSOptions(t *testing.T) {
 func TestValidateIdentityOptions(t *testing.T) {
 	t.Parallel()
 
-	require.NoError(t, validateIdentityOptions(option.SnellOutboundOptions{Version: 4, Identity: true}))
+	require.NoError(t, validateIdentityOptions(option.SnellOutboundOptions{
+		Version: 4,
+		AbstractSnellOutboundOptions: option.AbstractSnellOutboundOptions{
+			Identity: true,
+		},
+	}))
 	require.NoError(t, validateIdentityOptions(option.SnellOutboundOptions{Version: 6}))
-	require.ErrorContains(t, validateIdentityOptions(option.SnellOutboundOptions{Version: 6, Identity: true}), "requires version 4")
+	require.ErrorContains(t, validateIdentityOptions(option.SnellOutboundOptions{
+		Version: 6,
+		AbstractSnellOutboundOptions: option.AbstractSnellOutboundOptions{
+			Identity: true,
+		},
+	}), "requires version 4")
 }
