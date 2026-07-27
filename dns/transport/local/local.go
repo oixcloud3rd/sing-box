@@ -8,7 +8,6 @@ import (
 	"github.com/sagernet/sing-box/adapter"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/dns"
-	"github.com/sagernet/sing-box/dns/transport/hosts"
 	"github.com/sagernet/sing-box/dns/transport/mdns"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
@@ -35,7 +34,6 @@ type Transport struct {
 	dns.TransportAdapter
 	ctx             context.Context
 	logger          logger.ContextLogger
-	hosts           *hosts.File
 	dialer          N.Dialer
 	preferGo        bool
 	fallback        bool
@@ -46,8 +44,7 @@ type Transport struct {
 	serverSet       atomic.Pointer[localServerSet]
 	serverSetAccess sync.Mutex
 
-	neighborResolver adapter.NeighborResolver
-	neighborSuffixes []string
+	preferredDomainMatcher *PreferredDomainMatcher
 }
 
 type dhcpTransport interface {
@@ -60,28 +57,26 @@ func NewTransport(ctx context.Context, logger log.ContextLogger, tag string, opt
 	if err != nil {
 		return nil, err
 	}
-	suffixes, err := buildNeighborMatchers(options.NeighborDomain)
+	preferredDomainMatcher, err := NewPreferredDomainMatcher(ctx, logger, options.NeighborDomain)
 	if err != nil {
 		return nil, err
 	}
 	return &Transport{
-		TransportAdapter: dns.NewTransportAdapterWithLocalOptions(C.DNSTypeLocal, tag, options),
-		ctx:              ctx,
-		logger:           logger,
-		dialer:           transportDialer,
-		preferGo:         options.PreferGo,
-		neighborSuffixes: suffixes,
+		TransportAdapter:       dns.NewTransportAdapterWithLocalOptions(C.DNSTypeLocal, tag, options),
+		ctx:                    ctx,
+		logger:                 logger,
+		dialer:                 transportDialer,
+		preferGo:               options.PreferGo,
+		preferredDomainMatcher: preferredDomainMatcher,
 	}, nil
 }
 
 func (t *Transport) Start(stage adapter.StartStage) error {
 	switch stage {
 	case adapter.StartStateInitialize:
-		defaultHosts, err := hosts.NewDefault()
+		err := t.preferredDomainMatcher.Start(stage)
 		if err != nil {
-			t.logger.Warn(err)
-		} else {
-			t.hosts = defaultHosts
+			return err
 		}
 		if !t.preferGo && isSystemdResolvedManaged() {
 			resolvedResolver, err := NewResolvedResolver(t.ctx, t.logger)
@@ -109,9 +104,9 @@ func (t *Transport) Start(stage adapter.StartStage) error {
 		} else {
 			t.mdnsTransport = mdns.NewRawTransport(t.TransportAdapter, t.ctx, t.logger)
 		}
-		router := service.FromContext[adapter.Router](t.ctx)
-		if router != nil {
-			t.neighborResolver = router.NeighborResolver()
+		err := t.preferredDomainMatcher.Start(stage)
+		if err != nil {
+			return err
 		}
 		fallthrough
 	default:
@@ -160,12 +155,7 @@ func (t *Transport) Reset() {
 }
 
 func (t *Transport) PreferredDomain(domain string) bool {
-	if t.hosts != nil {
-		if len(t.hosts.Lookup(dns.FqdnToDomain(domain))) > 0 {
-			return true
-		}
-	}
-	return t.hasNeighborHost(domain) || mdns.IsLocalDomain(domain)
+	return t.preferredDomainMatcher.PreferredDomain(domain)
 }
 
 func (t *Transport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, error) {
@@ -185,14 +175,14 @@ func (t *Transport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg,
 
 func (t *Transport) ExchangeAsync(ctx context.Context, message *mDNS.Msg, callback func(response *mDNS.Msg, err error)) {
 	question := message.Question[0]
-	if t.hosts != nil && (question.Qtype == mDNS.TypeA || question.Qtype == mDNS.TypeAAAA) {
-		addresses := t.hosts.Lookup(dns.FqdnToDomain(question.Name))
+	if question.Qtype == mDNS.TypeA || question.Qtype == mDNS.TypeAAAA {
+		addresses := t.preferredDomainMatcher.lookupHosts(question.Name)
 		if len(addresses) > 0 {
 			callback(dns.FixedResponse(message.Id, question, addresses, C.DefaultDNSTTL), nil)
 			return
 		}
 	}
-	response := t.lookupNeighbor(message)
+	response := t.preferredDomainMatcher.lookupNeighbor(message)
 	if response != nil {
 		callback(response, nil)
 		return

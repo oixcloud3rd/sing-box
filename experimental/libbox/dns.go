@@ -9,6 +9,8 @@ import (
 	"github.com/sagernet/sing-box/adapter"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/dns"
+	dnslocal "github.com/sagernet/sing-box/dns/transport/local"
+	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -24,22 +26,31 @@ type LocalDNSTransport interface {
 	Exchange(ctx *ExchangeContext, message []byte) error
 }
 
-var _ adapter.DNSTransport = (*platformTransport)(nil)
+var (
+	_ adapter.DNSTransport                    = (*platformTransport)(nil)
+	_ adapter.DNSTransportWithPreferredDomain = (*platformTransport)(nil)
+)
 
 type platformTransport struct {
 	dns.TransportAdapter
-	iif LocalDNSTransport
+	iif                    LocalDNSTransport
+	preferredDomainMatcher *dnslocal.PreferredDomainMatcher
 }
 
-func newPlatformTransport(iif LocalDNSTransport, tag string, options option.LocalDNSServerOptions) *platformTransport {
-	return &platformTransport{
-		TransportAdapter: dns.NewTransportAdapterWithLocalOptions(C.DNSTypeLocal, tag, options),
-		iif:              iif,
+func newPlatformTransport(ctx context.Context, logger log.ContextLogger, iif LocalDNSTransport, tag string, options option.LocalDNSServerOptions) (*platformTransport, error) {
+	preferredDomainMatcher, err := dnslocal.NewPreferredDomainMatcher(ctx, logger, options.NeighborDomain)
+	if err != nil {
+		return nil, err
 	}
+	return &platformTransport{
+		TransportAdapter:       dns.NewTransportAdapterWithLocalOptions(C.DNSTypeLocal, tag, options),
+		iif:                    iif,
+		preferredDomainMatcher: preferredDomainMatcher,
+	}, nil
 }
 
 func (p *platformTransport) Start(stage adapter.StartStage) error {
-	return nil
+	return p.preferredDomainMatcher.Start(stage)
 }
 
 func (p *platformTransport) Close() error {
@@ -47,6 +58,10 @@ func (p *platformTransport) Close() error {
 }
 
 func (p *platformTransport) Reset() {
+}
+
+func (p *platformTransport) PreferredDomain(domain string) bool {
+	return p.preferredDomainMatcher.PreferredDomain(domain)
 }
 
 func (p *platformTransport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, error) {
