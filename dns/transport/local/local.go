@@ -44,7 +44,7 @@ type Transport struct {
 	serverSet       atomic.Pointer[localServerSet]
 	serverSetAccess sync.Mutex
 
-	preferredDomainMatcher *PreferredDomainMatcher
+	preferredDomainResolver PreferredDomainResolver
 }
 
 type dhcpTransport interface {
@@ -57,24 +57,24 @@ func NewTransport(ctx context.Context, logger log.ContextLogger, tag string, opt
 	if err != nil {
 		return nil, err
 	}
-	preferredDomainMatcher, err := NewPreferredDomainMatcher(ctx, logger, options.NeighborDomain)
+	preferredDomainResolver, err := NewPreferredDomainResolver(ctx, logger, options.NeighborDomain)
 	if err != nil {
 		return nil, err
 	}
 	return &Transport{
-		TransportAdapter:       dns.NewTransportAdapterWithLocalOptions(C.DNSTypeLocal, tag, options),
-		ctx:                    ctx,
-		logger:                 logger,
-		dialer:                 transportDialer,
-		preferGo:               options.PreferGo,
-		preferredDomainMatcher: preferredDomainMatcher,
+		TransportAdapter:        dns.NewTransportAdapterWithLocalOptions(C.DNSTypeLocal, tag, options),
+		ctx:                     ctx,
+		logger:                  logger,
+		dialer:                  transportDialer,
+		preferGo:                options.PreferGo,
+		preferredDomainResolver: preferredDomainResolver,
 	}, nil
 }
 
 func (t *Transport) Start(stage adapter.StartStage) error {
 	switch stage {
 	case adapter.StartStateInitialize:
-		err := t.preferredDomainMatcher.Start(stage)
+		err := t.preferredDomainResolver.Start(stage)
 		if err != nil {
 			return err
 		}
@@ -104,7 +104,7 @@ func (t *Transport) Start(stage adapter.StartStage) error {
 		} else {
 			t.mdnsTransport = mdns.NewRawTransport(t.TransportAdapter, t.ctx, t.logger)
 		}
-		err := t.preferredDomainMatcher.Start(stage)
+		err := t.preferredDomainResolver.Start(stage)
 		if err != nil {
 			return err
 		}
@@ -155,7 +155,7 @@ func (t *Transport) Reset() {
 }
 
 func (t *Transport) PreferredDomain(domain string) bool {
-	return t.preferredDomainMatcher.PreferredDomain(domain)
+	return t.preferredDomainResolver.PreferredDomain(domain)
 }
 
 func (t *Transport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, error) {
@@ -174,19 +174,12 @@ func (t *Transport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg,
 }
 
 func (t *Transport) ExchangeAsync(ctx context.Context, message *mDNS.Msg, callback func(response *mDNS.Msg, err error)) {
-	question := message.Question[0]
-	if question.Qtype == mDNS.TypeA || question.Qtype == mDNS.TypeAAAA {
-		addresses := t.preferredDomainMatcher.lookupHosts(question.Name)
-		if len(addresses) > 0 {
-			callback(dns.FixedResponse(message.Id, question, addresses, C.DefaultDNSTTL), nil)
-			return
-		}
-	}
-	response := t.preferredDomainMatcher.lookupNeighbor(message)
-	if response != nil {
+	response, resolved := t.preferredDomainResolver.TryResolve(message)
+	if resolved {
 		callback(response, nil)
 		return
 	}
+	question := message.Question[0]
 	if mdns.IsLocalDomain(question.Name) {
 		if C.IsDarwin {
 			t.systemExchangeAsync(ctx, message, callback)

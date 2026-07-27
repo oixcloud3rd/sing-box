@@ -33,24 +33,24 @@ var (
 
 type platformTransport struct {
 	dns.TransportAdapter
-	iif                    LocalDNSTransport
-	preferredDomainMatcher *dnslocal.PreferredDomainMatcher
+	iif                     LocalDNSTransport
+	preferredDomainResolver dnslocal.PreferredDomainResolver
 }
 
 func newPlatformTransport(ctx context.Context, logger log.ContextLogger, iif LocalDNSTransport, tag string, options option.LocalDNSServerOptions) (*platformTransport, error) {
-	preferredDomainMatcher, err := dnslocal.NewPreferredDomainMatcher(ctx, logger, options.NeighborDomain)
+	preferredDomainResolver, err := dnslocal.NewPreferredDomainResolver(ctx, logger, options.NeighborDomain)
 	if err != nil {
 		return nil, err
 	}
 	return &platformTransport{
-		TransportAdapter:       dns.NewTransportAdapterWithLocalOptions(C.DNSTypeLocal, tag, options),
-		iif:                    iif,
-		preferredDomainMatcher: preferredDomainMatcher,
+		TransportAdapter:        dns.NewTransportAdapterWithLocalOptions(C.DNSTypeLocal, tag, options),
+		iif:                     iif,
+		preferredDomainResolver: preferredDomainResolver,
 	}, nil
 }
 
 func (p *platformTransport) Start(stage adapter.StartStage) error {
-	return p.preferredDomainMatcher.Start(stage)
+	return p.preferredDomainResolver.Start(stage)
 }
 
 func (p *platformTransport) Close() error {
@@ -61,10 +61,13 @@ func (p *platformTransport) Reset() {
 }
 
 func (p *platformTransport) PreferredDomain(domain string) bool {
-	return p.preferredDomainMatcher.PreferredDomain(domain)
+	return p.preferredDomainResolver.PreferredDomain(domain)
 }
 
 func (p *platformTransport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, error) {
+	if response, resolved := p.preferredDomainResolver.TryResolve(message); resolved {
+		return response, nil
+	}
 	response := &ExchangeContext{
 		context: ctx,
 	}
