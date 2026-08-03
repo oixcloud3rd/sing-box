@@ -22,7 +22,7 @@ on:
           - Apple-release
           - iOS
           - macOS
-          - macOS-standalone
+          # - macOS-standalone
           # - tvOS
           - iOS-jailbreak
           - publish-android
@@ -1221,7 +1221,7 @@ jobs:
   build_apple_library:
     name: Build Apple library (${{ matrix.artifact }})
     runs-on: ${{ matrix.build && 'macos-26' || 'ubuntu-latest' }}
-    if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'iOS' || inputs.build == 'macOS' || inputs.build == 'macOS-standalone' || inputs.build == 'iOS-jailbreak'
+    if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'iOS' || inputs.build == 'macOS' || inputs.build == 'iOS-jailbreak'
     needs:
       - calculate_version
     strategy:
@@ -1237,10 +1237,10 @@ jobs:
           #   build: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'tvOS') }}
           - artifact: macos-arm64
             platform: macos/arm64
-            build: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'macOS' || inputs.build == 'macOS-standalone') }}
+            build: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'macOS') }}
           - artifact: macos-amd64
             platform: macos/amd64
-            build: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'macOS' || inputs.build == 'macOS-standalone') }}
+            build: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'macOS') }}
     steps:
       - name: Checkout
         if: matrix.build
@@ -1288,7 +1288,7 @@ jobs:
   build_apple:
     name: Build Apple standalone and jailbreak clients
     runs-on: ${{ matrix.if && 'macos-26' || 'ubuntu-latest' }}
-    if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'macOS-standalone' || inputs.build == 'iOS-jailbreak'
+    if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'iOS-jailbreak'
     needs:
       - calculate_version
       - build_apple_library
@@ -1296,16 +1296,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: macOS-standalone
-            if: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'macOS-standalone') }}
-            type: standalone
-            platform: macos
-            variant: ''
-            library_arch: '*'
-            scheme: ''
-            destination: ''
-            archive: ''
-            upload: ''
+          # Standalone is disabled until private artifact distribution is available.
+          # - name: macOS-standalone
+          #   if: ${{ github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple-release' || inputs.build == 'macOS-standalone' }}
+          #   type: standalone
+          #   platform: macos
+          #   variant: all
+          #   library_arch: '*'
+          #   scheme: ''
+          #   destination: ''
+          #   archive: ''
+          #   upload: ''
           - name: iOS-jailbreak
             if: ${{ github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'iOS-jailbreak' }}
             type: jailbreak
@@ -1585,21 +1586,14 @@ jobs:
       - name: Build standalone packages
         if: matrix.if && matrix.type == 'standalone'
         run: |-
-          STANDALONE_BUILD_TARGET=build_macos_pkg
-          STANDALONE_NOTARIZE_TARGET=notarize_macos_pkg
-          if grep -q '^build_macos_pkg_all:' clients/apple/Makefile; then
-            STANDALONE_BUILD_TARGET=build_macos_pkg_all
-            STANDALONE_NOTARIZE_TARGET=notarize_macos_pkg_all
-          fi
-          echo "STANDALONE_NOTARIZE_TARGET=$STANDALONE_NOTARIZE_TARGET" >> "$GITHUB_ENV"
-          make -C clients/apple "$STANDALONE_BUILD_TARGET"
+          make -C clients/apple build_macos_pkg_${{ matrix.variant }}
         env:
           DISABLE_SWIFTLINT: "1"
           XCODEBUILD_FLAGS: -clonedSourcePackagesDirPath ${{ runner.temp }}/SourcePackages
       - name: Notarize standalone packages
         if: matrix.if && matrix.type == 'standalone' && github.event_name == 'workflow_dispatch'
         run: |-
-          make -C clients/apple "$STANDALONE_NOTARIZE_TARGET"
+          make -C clients/apple notarize_macos_pkg_${{ matrix.variant }}
       - name: Prepare standalone packages
         if: matrix.if && matrix.type == 'standalone'
         run: |-
@@ -1629,126 +1623,11 @@ jobs:
       - name: Prune Swift package repositories
         if: matrix.if
         run: rm -rf "$RUNNER_TEMP/SourcePackages/repositories"
-      - name: Delete expired standalone builds and upload to S3
-        if: matrix.if && matrix.type == 'standalone'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-          AWS_EC2_METADATA_DISABLED: "true"
-          AWS_PAGER: ""
-          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
-          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          AWS_DEFAULT_REGION: ${{ vars.AWS_REGION }}
-          AWS_CONFIG_FILE: ${{ runner.temp }}/s3-config
-          S3_BUCKET: ${{ secrets.S3_BUCKET }}
-          S3_PREFIX: ${{ vars.S3_PREFIX }}
-          S3_ENDPOINT_URL: ${{ vars.S3_ENDPOINT_URL }}
-          S3_ADDRESSING_STYLE: ${{ vars.S3_ADDRESSING_STYLE }}
-        run: |-
-          set -euo pipefail
-          : "${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID secret is required}"
-          : "${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY secret is required}"
-          : "${AWS_REGION:?AWS_REGION variable is required}"
-          : "${S3_BUCKET:?S3_BUCKET secret is required}"
-
-          s3_args=(--region "$AWS_REGION" --no-cli-pager)
-          if [[ -n "$S3_ENDPOINT_URL" ]]; then
-            s3_args+=(--endpoint-url "$S3_ENDPOINT_URL")
-          fi
-          addressing_style="${S3_ADDRESSING_STYLE:-virtual}"
-          case "$addressing_style" in
-            virtual|path|auto) ;;
-            *)
-              echo "S3_ADDRESSING_STYLE must be virtual, path, or auto" >&2
-              exit 1
-              ;;
-          esac
-          aws configure set default.s3.addressing_style "$addressing_style"
-
-          prefix="$S3_PREFIX"
-          while [[ "$prefix" == /* ]]; do
-            prefix="${prefix#/}"
-          done
-          while [[ "$prefix" == */ ]]; do
-            prefix="${prefix%/}"
-          done
-          release_root=""
-          if [[ -n "$prefix" ]]; then
-            release_root="${prefix}/"
-          fi
-
-          objects_path="$RUNNER_TEMP/s3-standalone-objects.json"
-          expired_path="$RUNNER_TEMP/s3-expired-standalone-keys.txt"
-          aws "${s3_args[@]}" s3api list-objects \
-            --bucket "$S3_BUCKET" \
-            --prefix "${release_root}v" \
-            --output json > "$objects_path"
-          python3 - "$objects_path" "$expired_path" "$release_root" <<'PY'
-          import json
-          import sys
-          from datetime import datetime, timedelta, timezone
-
-          objects_path, expired_path, release_root = sys.argv[1:]
-          version_prefix = f"{release_root}v"
-          cutoff = datetime.now(timezone.utc) - timedelta(days=90)
-          builds = {}
-
-          with open(objects_path) as objects_file:
-              objects = json.load(objects_file).get("Contents", [])
-
-          for entry in objects:
-              key = entry.get("Key", "")
-              if not key.startswith(version_prefix):
-                  continue
-              relative_key = key[len(version_prefix):]
-              version, separator, filename = relative_key.partition("/")
-              if not separator or not version or not filename:
-                  continue
-              modified_text = entry["LastModified"].replace("Z", "+00:00")
-              modified = datetime.fromisoformat(modified_text)
-              if modified.tzinfo is None:
-                  modified = modified.replace(tzinfo=timezone.utc)
-              builds.setdefault(version, []).append((key, modified))
-
-          expired_keys = []
-          expired_builds = 0
-          for entries in builds.values():
-              if max(modified for _, modified in entries) < cutoff:
-                  expired_builds += 1
-                  expired_keys.extend(key for key, _ in entries)
-
-          with open(expired_path, "w") as expired_file:
-              for key in sorted(expired_keys):
-                  expired_file.write(f"{key}\n")
-
-          print(f"found {expired_builds} expired S3 builds ({len(expired_keys)} objects)")
-          PY
-          while IFS= read -r object_key; do
-            [[ -n "$object_key" ]] || continue
-            aws "${s3_args[@]}" s3api delete-object \
-              --bucket "$S3_BUCKET" \
-              --key "$object_key" > /dev/null
-          done < "$expired_path"
-
-          destination="s3://${S3_BUCKET}/${release_root}v${VERSION}/"
-          aws "${s3_args[@]}" s3 cp dist/ "$destination" \
-            --recursive \
-            --only-show-errors
-          {
-            echo "### macOS standalone S3 artifacts"
-            for artifact in dist/*; do
-              echo "- \`$(basename "$artifact")\`"
-            done
-            echo
-            echo "Objects with the same name were replaced. Builds older than 90 days were deleted."
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload jailbreak release artifact
-        if: matrix.if && matrix.type == 'jailbreak'
+      - name: Upload release artifact
+        if: matrix.if && (matrix.type == 'standalone' || matrix.type == 'jailbreak')
         uses: actions/upload-artifact@v4
         with:
-          name: binary-apple-jailbreak
+          name: binary-apple-${{ matrix.type }}${{ matrix.variant && format('-{0}', matrix.variant) || '' }}
           path: 'dist'
   build_apple_app_store:
     name: Build Apple App Store clients
