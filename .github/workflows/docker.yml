@@ -3,8 +3,8 @@ name: Publish Docker Images
 on:
   #push:
   #  branches:
-  #    - stable
-  #    - testing
+  #    - stable-patch
+  #    - testing-patch
   release:
     types:
       - published
@@ -13,8 +13,14 @@ on:
       tag:
         description: "The tag version you want to build"
 
+permissions:
+  contents: read
+  packages: write
+
 env:
-  REGISTRY_IMAGE: ghcr.io/sagernet/sing-box
+  REGISTRY_IMAGE: ghcr.io/oixcloud3rd/sing-box
+  OIXCLOUD_DNS_AUTH_PRIVATE_KEY: ${{ secrets.OIXCLOUD_DNS_AUTH_PRIVATE_KEY }}
+  OIXCLOUD_REQUIRE_DNS_AUTH_PRIVATE_KEY: "1"
 
 jobs:
   build_binary:
@@ -112,7 +118,8 @@ jobs:
           echo "BUILD_TAGS=${TAGS}" >> "${GITHUB_ENV}"
       - name: Set shared ldflags
         run: |
-          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS)" >> "${GITHUB_ENV}"
+          CGO_ENABLED=0 go run ./cmd/internal/check_oixcloud_dns_auth_key
+          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS) -X 'github.com/sagernet/sing-box/constant.OIXCloudDNSAuthPrivateKey=${OIXCLOUD_DNS_AUTH_PRIVATE_KEY}'" >> "${GITHUB_ENV}"
       - name: Build (naive)
         if: matrix.naive
         run: |
@@ -220,6 +227,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY_IMAGE }}
+          labels: |
+            org.opencontainers.image.url=https://sing-box.oixcloud3rd.akinokaede.com
+            org.opencontainers.image.source=https://github.com/oixcloud3rd/sing-box
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v6
