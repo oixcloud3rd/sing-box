@@ -74,9 +74,6 @@ func main() {
 }
 
 const (
-	appID   = "6785326793"
-	groupID = "39f9ebdc-05d4-421f-9595-dae71df227c4"
-
 	applePath               = "../sing-box-for-apple"
 	appStorePromotionalText = "The universal proxy platform."
 	appStoreWhatsNew        = "Fixes and improvements"
@@ -84,6 +81,9 @@ const (
 )
 
 var (
+	appID   = os.Getenv("ASC_APP_ID")
+	groupID = os.Getenv("ASC_TESTFLIGHT_GROUP_ID")
+
 	appStorePlatforms   = []string{"ios", "tvos"}
 	platformDirectories = map[asc.Platform]string{
 		asc.PlatformIOS:   "SFI",
@@ -220,6 +220,11 @@ func publishTestflight(ctx context.Context) error {
 		releaseNotes = strings.Join(os.Args[3:], " ")
 	}
 
+	testflightType := os.Getenv("ASC_TESTFLIGHT_TYPE")
+	internalTesting := testflightType == "" || testflightType == "Internal"
+	if !internalTesting && testflightType != "External" {
+		return E.New("unknown TestFlight type: ", testflightType)
+	}
 	client := createClient(20 * time.Minute)
 
 	log.Info(tag, " list build IDs")
@@ -273,14 +278,18 @@ func publishTestflight(ctx context.Context) error {
 			return *it.Attributes.Locale == "en-US"
 		})
 		if localization.ID == "" {
-			log.Fatal(string(platform), " ", tag, " no en-US localization found")
-		}
-		if localization.Attributes == nil || localization.Attributes.WhatsNew == nil || *localization.Attributes.WhatsNew == "" {
+			if !internalTesting {
+				log.Fatal(string(platform), " ", tag, " no en-US localization found")
+			}
+		} else if localization.Attributes == nil || localization.Attributes.WhatsNew == nil || *localization.Attributes.WhatsNew == "" {
 			log.Info(string(platform), " ", tag, " update localization")
 			_, _, err = client.TestFlight.UpdateBetaBuildLocalization(ctx, localization.ID, common.Ptr(releaseNotes))
 			if err != nil {
 				return err
 			}
+		}
+		if internalTesting {
+			break
 		}
 		log.Info(string(platform), " ", tag, " publish")
 		response, err := client.TestFlight.AddBuildsToBetaGroup(ctx, groupID, []string{build.ID})
