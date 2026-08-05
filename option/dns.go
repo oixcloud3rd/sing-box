@@ -194,6 +194,11 @@ type LocalDNSServerOptions struct {
 type RemoteDNSServerOptions struct {
 	RawLocalDNSServerOptions
 	DNSServerAddressOptions
+	OIXCloud bool `json:"oixcloud,omitempty"`
+}
+
+func (o *RemoteDNSServerOptions) IsOIXCloudEnabled() bool {
+	return o.OIXCloud
 }
 
 type RemoteTLSDNSServerOptions struct {
