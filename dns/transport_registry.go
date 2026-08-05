@@ -22,7 +22,14 @@ func RegisterTransport[Options any](registry *TransportRegistry, transportType s
 		if rawOptions != nil {
 			options = rawOptions.(*Options)
 		}
-		return constructor(ctx, logger, tag, common.PtrValueOrDefault(options))
+		transport, err := constructor(ctx, logger, tag, common.PtrValueOrDefault(options))
+		if err != nil {
+			return nil, err
+		}
+		if oixCloudOptions, isOIXCloudOptions := rawOptions.(interface{ IsOIXCloudEnabled() bool }); isOIXCloudOptions && oixCloudOptions.IsOIXCloudEnabled() {
+			return newOIXCloudTransport(logger, transport)
+		}
+		return transport, nil
 	})
 }
 
