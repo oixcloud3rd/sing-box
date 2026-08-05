@@ -2,14 +2,14 @@
 set -euo pipefail
 
 branches=$(git branch -r --contains HEAD)
-if echo "$branches" | grep -q 'origin/stable'; then
+if echo "$branches" | grep -q 'origin/stable-patch'; then
   track=stable
-elif echo "$branches" | grep -q 'origin/testing'; then
+elif echo "$branches" | grep -q 'origin/testing-patch'; then
   track=testing
-elif echo "$branches" | grep -q 'origin/oldstable'; then
+elif echo "$branches" | grep -q 'origin/oldstable-patch'; then
   track=oldstable
 else
-  echo "ERROR: HEAD is not on any known release branch (stable/testing/oldstable)" >&2
+  echo "ERROR: HEAD is not on any known release branch (stable-patch/testing-patch/oldstable-patch)" >&2
   exit 1
 fi
 
