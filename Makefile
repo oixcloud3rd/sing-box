@@ -1,3 +1,9 @@
+OIXCLOUD_DNS_AUTH_PRIVATE_KEY_FROM_ENV := $(OIXCLOUD_DNS_AUTH_PRIVATE_KEY)
+-include .env
+ifneq ($(strip $(OIXCLOUD_DNS_AUTH_PRIVATE_KEY_FROM_ENV)),)
+OIXCLOUD_DNS_AUTH_PRIVATE_KEY := $(OIXCLOUD_DNS_AUTH_PRIVATE_KEY_FROM_ENV)
+endif
+
 NAME = sing-box
 COMMIT = $(shell git rev-parse --short HEAD)
 TAGS ?= $(shell cat release/DEFAULT_BUILD_TAGS_OTHERS)
@@ -7,25 +13,28 @@ GOHOSTARCH = $(shell go env GOHOSTARCH)
 VERSION=$(shell CGO_ENABLED=0 GOOS=$(GOHOSTOS) GOARCH=$(GOHOSTARCH) go run github.com/sagernet/sing-box/cmd/internal/read_tag@latest)
 
 LDFLAGS_SHARED = $(shell cat release/LDFLAGS)
-PARAMS = -v -trimpath -ldflags "-X 'github.com/sagernet/sing-box/constant.Version=$(VERSION)' $(LDFLAGS_SHARED) -s -w -buildid="
+OIXCLOUD_DNS_AUTH_PRIVATE_KEY ?=
+export OIXCLOUD_DNS_AUTH_PRIVATE_KEY
+OIXCLOUD_DNS_AUTH_LDFLAGS = $(if $(strip $(OIXCLOUD_DNS_AUTH_PRIVATE_KEY)),-X 'github.com/sagernet/sing-box/constant.OIXCloudDNSAuthPrivateKey=$(OIXCLOUD_DNS_AUTH_PRIVATE_KEY)')
+PARAMS = -v -trimpath -ldflags "-X 'github.com/sagernet/sing-box/constant.Version=$(VERSION)' $(OIXCLOUD_DNS_AUTH_LDFLAGS) $(LDFLAGS_SHARED) -s -w -buildid="
 MAIN_PARAMS = $(PARAMS) -tags "$(TAGS)"
 MAIN = ./cmd/sing-box
 PREFIX ?= $(shell go env GOPATH)
 SING_FFI ?= sing-ffi
 LIBBOX_FFI_CONFIG ?= ./experimental/libbox/ffi.json
 
-.PHONY: test release docs build schema
+.PHONY: test release docs build schema require_oixcloud_dns_auth_private_key
 
 build:
-	export GOTOOLCHAIN=local && \
+	@export GOTOOLCHAIN=local && \
 	go build $(MAIN_PARAMS) $(MAIN)
 
 race:
-	export GOTOOLCHAIN=local && \
+	@export GOTOOLCHAIN=local && \
 	go build -race $(MAIN_PARAMS) $(MAIN)
 
 ci_build:
-	export GOTOOLCHAIN=local && \
+	@export GOTOOLCHAIN=local && \
 	go build $(PARAMS) $(MAIN) && \
 	go build $(MAIN_PARAMS) $(MAIN)
 
@@ -36,7 +45,10 @@ schema:
 	go run -ldflags "$(LDFLAGS_SHARED)" --tags "$(TAGS)" $(MAIN) schema -o docs/schema.json
 
 install:
-	go build -o $(PREFIX)/bin/$(NAME) $(MAIN_PARAMS) $(MAIN)
+	@go build -o $(PREFIX)/bin/$(NAME) $(MAIN_PARAMS) $(MAIN)
+
+require_oixcloud_dns_auth_private_key:
+	@OIXCLOUD_DNS_AUTH_PRIVATE_KEY="$(OIXCLOUD_DNS_AUTH_PRIVATE_KEY)" go run ./cmd/internal/check_oixcloud_dns_auth_key
 
 fmt:
 	@golangci-lint fmt
@@ -66,7 +78,7 @@ proto_install:
 update_certificates:
 	go run ./cmd/internal/update_certificates
 
-release:
+release: require_oixcloud_dns_auth_private_key
 	go run ./cmd/internal/build goreleaser release --clean --skip publish
 	mkdir dist/release
 	mv dist/*.tar.gz \
@@ -79,7 +91,7 @@ release:
 	ghr --replace --draft --prerelease -p 5 "v${VERSION}" dist/release
 	rm -r dist/release
 
-release_repo:
+release_repo: require_oixcloud_dns_auth_private_key
 	go run ./cmd/internal/build goreleaser release -f .goreleaser.fury.yaml --clean
 
 release_install:
@@ -91,7 +103,7 @@ update_android_version:
 update_desktop_version:
 	go run ./cmd/internal/update_desktop_version
 
-build_android:
+build_android: require_oixcloud_dns_auth_private_key
 	cd ../sing-box-for-android && ./gradlew :app:clean :app:assembleOtherRelease :app:assembleOtherLegacyRelease && ./gradlew --stop
 
 upload_android:
@@ -111,7 +123,7 @@ publish_android:
 
 # TODO: find why and remove `-destination 'generic/platform=iOS'`
 # TODO: remove xcode clean when fix control widget fixed
-build_ios:
+build_ios: require_oixcloud_dns_auth_private_key
 	cd ../sing-box-for-apple && \
 	rm -rf build/SFI.xcarchive && \
 	xcodebuild clean -scheme SFI -derivedDataPath build/SFI.dd && \
@@ -275,7 +287,7 @@ docs:
 	venv/bin/mkdocs serve
 
 publish_docs:
-	venv/bin/mkdocs gh-deploy -m "Update" --force --ignore-version --no-history
+	venv/bin/mkdocs gh-deploy -r oixcloud3rd -b docs -m "Update" --force --ignore-version --no-history
 
 docs_install:
 	python3 -m venv venv
