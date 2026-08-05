@@ -16,10 +16,13 @@ icon: material/new-box
   "version": 4,
   "psk": "password",
   "userkey": "",
+  "identity": false,
   "reuse": false,
   "network": "tcp",
   "obfs_mode": "",
   "obfs_host": "",
+
+  "tls": {},
 
   ... // Dial Fields
 }
@@ -84,6 +87,16 @@ The pre-shared key.
 
 The user key, used to authenticate against a multi-user server.
 
+#### identity
+
+==Version 4 only==
+
+Enable the non-standard Snell identity header used by oixCloud servers.
+
+The identity is the first 16 bytes of `BLAKE3-512(psk)`. When enabled, `DLSNID01` and the identity
+are inserted after the initial Snell salt. This option is disabled by default and must be enabled
+explicitly when required by a server using oixCloud's proprietary Snell ECH-TLS extension.
+
 #### reuse
 
 Enable connection reuse (the Snell v2 `CONNECT` command).
@@ -111,6 +124,48 @@ HTTP obfuscation mode, one of `none` `http`.
 The HTTP `Host` header sent when `obfs_mode` is `http`.
 
 `bing.com` is used by default.
+
+#### tls
+
+==Version 4 only==
+
+TLS configuration, see [TLS](/configuration/shared/tls/).
+
+For oixCloud's proprietary Snell ECH-TLS extension, TLS must be enabled and `ech.enabled` must be `true`.
+The TLS connection carries raw Snell v4 without a V2Ray transport layer and cannot be combined with
+`obfs_mode`. Configure `alpn` according to the server; current oixCloud deployments use `h2`.
+
+Example:
+
+```json
+{
+  "type": "snell",
+  "tag": "snell-ech",
+  "server": "server.example.com",
+  "server_port": 443,
+  "version": 4,
+  "psk": "password",
+  "identity": true,
+  "reuse": true,
+  "tls": {
+    "enabled": true,
+    "server_name": "public.example.com",
+    "alpn": ["h2"],
+    "ech": {
+      "enabled": true,
+      "config": [
+        "-----BEGIN ECH CONFIGS-----",
+        "...",
+        "-----END ECH CONFIGS-----"
+      ]
+    },
+    "utls": {
+      "enabled": true,
+      "fingerprint": "chrome"
+    }
+  }
+}
+```
 
 #### mode
 
