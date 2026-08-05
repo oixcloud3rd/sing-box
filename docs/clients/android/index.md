@@ -13,10 +13,7 @@ platform-specific function implementation, such as TUN transparent proxy impleme
 
 ## :material-download: Download
 
-* [Play Store](https://play.google.com/store/apps/details?id=io.nekohasekai.sfa)
-* [Play Store (Beta)](https://play.google.com/apps/testing/io.nekohasekai.sfa)
-* [GitHub Releases](https://github.com/SagerNet/sing-box/releases)
-* [F-Droid](https://f-droid.org/packages/io.nekohasekai.sfa/) (Unified signature via reproducible builds)
+* [GitHub Releases](https://github.com/oixcloud3rd/sing-box/releases)
 
 ## :material-source-repository: Source code
 

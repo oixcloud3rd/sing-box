@@ -14,7 +14,7 @@ and provides platform-specific functionality, such as TUN transparent proxying.
 
 ## :material-download: Download
 
-* [GitHub Releases](https://github.com/SagerNet/sing-box/releases)
+* [GitHub Releases](https://github.com/oixcloud3rd/sing-box/releases)
 
 ## :material-source-repository: Source code
 
