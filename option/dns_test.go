@@ -19,13 +19,53 @@ func (stubDNSTransportOptionsRegistry) OptionTypes() []string {
 
 func (stubDNSTransportOptionsRegistry) CreateOptions(transportType string) (any, bool) {
 	switch transportType {
-	case C.DNSTypeUDP:
+	case C.DNSTypeUDP, C.DNSTypeTCP:
 		return new(RemoteDNSServerOptions), true
+	case C.DNSTypeTLS, C.DNSTypeQUIC:
+		return new(RemoteTLSDNSServerOptions), true
+	case C.DNSTypeHTTPS, C.DNSTypeHTTP3:
+		return new(RemoteHTTPSDNSServerOptions), true
 	case C.DNSTypeFakeIP:
 		return new(FakeIPDNSServerOptions), true
 	default:
 		return nil, false
 	}
+}
+
+func TestRemoteDNSServerOIXCloudOptions(t *testing.T) {
+	t.Parallel()
+
+	ctx := service.ContextWith[DNSTransportOptionsRegistry](context.Background(), stubDNSTransportOptionsRegistry{})
+	for _, transportType := range []string{
+		C.DNSTypeUDP,
+		C.DNSTypeTCP,
+		C.DNSTypeTLS,
+		C.DNSTypeHTTPS,
+		C.DNSTypeQUIC,
+		C.DNSTypeHTTP3,
+	} {
+		t.Run(transportType, func(t *testing.T) {
+			var options DNSServerOptions
+			err := json.UnmarshalContext(ctx, []byte(`{"type":"`+transportType+`","server":"127.0.0.1","oixcloud":true}`), &options)
+			require.NoError(t, err)
+			oixCloudOptions, loaded := options.Options.(interface{ IsOIXCloudEnabled() bool })
+			require.True(t, loaded)
+			require.True(t, oixCloudOptions.IsOIXCloudEnabled())
+
+			encoded, err := json.MarshalContext(ctx, &options)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"type":"`+transportType+`","server":"127.0.0.1","oixcloud":true}`, string(encoded))
+		})
+	}
+}
+
+func TestNonRemoteDNSServerRejectsOIXCloudOptions(t *testing.T) {
+	t.Parallel()
+
+	ctx := service.ContextWith[DNSTransportOptionsRegistry](context.Background(), stubDNSTransportOptionsRegistry{})
+	var options DNSServerOptions
+	err := json.UnmarshalContext(ctx, []byte(`{"type":"fakeip","oixcloud":true}`), &options)
+	require.ErrorContains(t, err, "unknown field")
 }
 
 func TestDNSOptionsRejectsLegacyFakeIPOptions(t *testing.T) {
