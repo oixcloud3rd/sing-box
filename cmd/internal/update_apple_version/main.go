@@ -49,13 +49,13 @@ func main() {
 	var marketingVersionUpdated bool
 	if flagTestFlight {
 		testFlightVersion := build_shared.TestFlightVersion(newVersion)
-		newContent, marketingVersionUpdated = findAndReplace(objectsMap, newContent, []string{"io.nekohasekai.sfamt"}, testFlightVersion)
+		newContent, marketingVersionUpdated = findAndReplace(objectsMap, newContent, []string{"com.akinokaede.sfa"}, testFlightVersion)
 		if marketingVersionUpdated {
 			log.Info("updated App Store version to ", testFlightVersion)
 		}
 	}
 	var standaloneVersionUpdated bool
-	newContent, standaloneVersionUpdated = findAndReplace(objectsMap, newContent, []string{"io.nekohasekai.sfamt.standalone", "io.nekohasekai.sfamt.system"}, newVersion.String())
+	newContent, standaloneVersionUpdated = findAndReplace(objectsMap, newContent, []string{"com.akinokaede.sfa.standalone", "com.akinokaede.sfa.system"}, newVersion.String())
 	if standaloneVersionUpdated {
 		marketingVersionUpdated = true
 		log.Info("updated version to ", newVersion.String())
