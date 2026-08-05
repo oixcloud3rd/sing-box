@@ -16,10 +16,14 @@ icon: material/new-box
   "version": 4,
   "psk": "password",
   "userkey": "",
+  "identity": 0,
   "reuse": false,
+  "preconnect": 0,
   "network": "tcp",
   "obfs_mode": "",
   "obfs_host": "",
+
+  "tls": {},
 
   ... // 拨号字段
 }
@@ -83,9 +87,26 @@ Snell 协议版本，`4` `6` 之一。
 
 用户密钥，用于向多用户服务器进行认证。
 
+#### identity
+
+==仅版本 4==
+
+Snell Identity 版本。省略时关闭，`1` 发送 `DLSNID01` Identity，
+`2` 发送使用 TLS exporter 和 Snell salt 认证的 `DLSNID02` Identity。
+
+Identity v1 是 `BLAKE3-512(psk)` 的前 16 字节。Identity v2 要求使用 ECH-TLS 且握手实际接受
+ECH；它不绑定特定 ALPN。默认 TCP 传输允许与 `tls.insecure: true` 一起使用，
+HTTP/3 则要求开启证书验证。
+
 #### reuse
 
 启用连接复用（Snell v2 `CONNECT` 命令）。
+
+#### preconnect
+
+后台预先建立的可复用连接数，范围为 `0` 到 `4`，默认为 `0`（关闭）。
+
+大于 `0` 时要求 Snell v4、ECH-TLS 和 `reuse: true`。预连接失败只记录警告，不阻止出站启动。
 
 #### network
 
@@ -110,6 +131,115 @@ HTTP 混淆模式，`none` `http` 之一。
 `obfs_mode` 为 `http` 时发送的 HTTP `Host` 头。
 
 默认为 `bing.com`。
+
+#### tls
+
+==仅版本 4==
+
+TLS 配置，参阅 [TLS](/zh/configuration/shared/tls/)。
+
+使用 Snell ECH-TLS 时，必须启用 TLS，并将 `ech.enabled` 设为 `true`。未设置 `transport` 时，
+TLS 连接直接承载 raw Snell v4。不能与 simple-obfs 组合使用，且服务端必须实际接受 ECH。
+
+`alpn` 默认为空；显式配置后，协商结果必须属于配置列表。可以显式使用 `snell-ech/1`，
+也可以使用自定义值。
+
+示例：
+
+```json
+{
+  "type": "snell",
+  "tag": "snell-ech",
+  "server": "server.example.com",
+  "server_port": 443,
+  "version": 4,
+  "psk": "password",
+  "identity": 2,
+  "reuse": true,
+  "preconnect": 2,
+  "tls": {
+    "enabled": true,
+    "server_name": "public.example.com",
+    "alpn": ["snell-ech/1"],
+    "ech": {
+      "enabled": true,
+      "config": [
+        "-----BEGIN ECH CONFIGS-----",
+        "...",
+        "-----END ECH CONFIGS-----"
+      ]
+    },
+    "utls": {
+      "enabled": true,
+      "fingerprint": "chrome"
+    }
+  }
+}
+```
+
+#### transport
+
+==仅版本 4==
+
+可选的 Snell 专用传输配置。省略时保持原有 TCP 行为，`type` 仅支持 `http3`。
+
+此模式通过 QUIC 上的 HTTP/3 Extended CONNECT 隧道承载 Snell v4，
+不是官方 Snell v5 的 QUIC 模式，也不是 V2Ray QUIC 传输。
+服务端须支持对应的隧道协议：`:protocol = websocket`，路径为 `/ws-tunnel-`
+加 PSK SHA-256 前 12 字节的小写十六进制。隧道内直接传输 Snell 数据，不添加 WebSocket 帧。
+
+要求显式设置 `identity: 2`，开启 TLS、ECH 和证书验证（`tls.insecure` 必须为 `false`）。
+不支持叠加 simple-obfs、Reality、非 Go TLS 引擎或显式配置 `1.3` 以外的 TLS 版本。
+二进制必须使用 `with_quic` 构建，即使开启回退也不例外。
+
+```json
+{
+  "type": "snell",
+  "server": "server.example.com",
+  "server_port": 443,
+  "version": 4,
+  "psk": "password",
+  "identity": 2,
+  "transport": {
+    "type": "http3",
+    "fallback": false,
+    "quic_congestion_control": "reno"
+  },
+  "tls": {
+    "enabled": true,
+    "server_name": "inner.example.com",
+    "ech": {
+      "enabled": true
+    }
+  }
+}
+```
+
+ECH 沿用现有 TLS 配置，支持内联配置、配置文件和 DNS 获取。
+HTTP/3 使用 Go TLS 1.3 和 `h3` ALPN；`tls.utls`、TLS 分片、spoof 和 kTLS 仅用于 TCP 回退。
+HTTP/3 不覆盖 TCP 的 ALPN：回退使用显式 `tls.alpn`，省略时默认 `snell-ech/1`。
+
+TCP 和 UDP 代理流量均通过隧道传输。多个独立隧道共享 QUIC 会话，
+现有 `reuse` 和 `preconnect` 配置仍然适用。
+
+##### transport.fallback
+
+默认 `false`。HTTP/3 隧道建立预算为 10 秒，失败直接返回错误。
+
+设为 `true` 时，HTTP/3 建隧道预算为 2 秒，失败后回退到同一服务器地址和端口的 ECH-TLS TCP。
+之后 30 秒内新建连接直接使用 TCP，再恢复 HTTP/3 尝试。调用方更短的 deadline 优先。
+回退仍要求证书验证和 ECH 成功，不使用明文 Snell 或 Identity v1，也不会在发送 Snell 数据后重试。
+
+##### transport.quic_congestion_control
+
+支持 `reno`、`cubic`、`bbr`，默认使用 QUIC 库原生 Reno。
+仅控制客户端 QUIC 发送方向，不改变服务端发送算法，也不影响 TCP 回退。
+
+##### transport.bbr_profile
+
+支持 `standard`、`conservative`、`aggressive`，使用 BBR 时默认 `standard`。
+仅允许与显式 `quic_congestion_control: "bbr"` 一起使用；
+其他算法下填写此字段会报错，不会自动切换为 BBR。
 
 #### mode
 

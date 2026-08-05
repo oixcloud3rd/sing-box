@@ -18,8 +18,10 @@ type _SnellInboundOptions struct {
 
 type AbstractSnellInboundOptions struct {
 	ListenOptions
-	PSK   string      `json:"psk"`
-	Users []SnellUser `json:"users,omitempty"`
+	PSK      string      `json:"psk"`
+	Users    []SnellUser `json:"users,omitempty"`
+	Identity bool        `json:"identity,omitempty"`
+	InboundTLSOptionsContainer
 }
 
 type SnellInboundOptions _SnellInboundOptions
@@ -77,10 +79,62 @@ type _SnellOutboundOptions struct {
 type AbstractSnellOutboundOptions struct {
 	DialerOptions
 	ServerOptions
-	PSK     string      `json:"psk"`
-	UserKey string      `json:"userkey,omitempty"`
-	Reuse   bool        `json:"reuse,omitempty"`
-	Network NetworkList `json:"network,omitempty"`
+	PSK        string                 `json:"psk"`
+	UserKey    string                 `json:"userkey,omitempty"`
+	Identity   *int                   `json:"identity,omitempty" enum:"1,2"`
+	Reuse      bool                   `json:"reuse,omitempty"`
+	Preconnect int                    `json:"preconnect,omitempty" enum:"0,1,2,3,4"`
+	Network    NetworkList            `json:"network,omitempty"`
+	Transport  *SnellTransportOptions `json:"transport,omitempty"`
+	OutboundTLSOptionsContainer
+}
+
+type SnellTransportOptions struct {
+	Type                  string  `json:"type" enum:"http3"`
+	Fallback              bool    `json:"fallback,omitempty"`
+	QUICCongestionControl string  `json:"quic_congestion_control,omitempty" enum:"reno,cubic,bbr"`
+	BBRProfile            *string `json:"bbr_profile,omitempty" enum:"standard,conservative,aggressive"`
+}
+
+func (o *SnellTransportOptions) UnmarshalJSON(content []byte) error {
+	type plain SnellTransportOptions
+	if err := json.UnmarshalDisallowUnknownFields(content, (*plain)(o)); err != nil {
+		return err
+	}
+	return o.Validate()
+}
+
+func (o SnellTransportOptions) DescribeSchema(builder schema.Builder) (*schema.Node, error) {
+	return builder.Define("SnellTransport", func() (*schema.Node, error) {
+		node := schema.StrictObject()
+		if err := builder.FlattenStruct(node, reflect.TypeFor[SnellTransportOptions]()); err != nil {
+			return nil, err
+		}
+		node.Required = []string{"type"}
+		return node, nil
+	})
+}
+
+func (o SnellTransportOptions) Validate() error {
+	if o.Type != "http3" {
+		return E.New("snell: unknown transport type: ", o.Type)
+	}
+	switch o.QUICCongestionControl {
+	case "", "reno", "cubic", "bbr":
+	default:
+		return E.New("snell: unknown QUIC congestion control: ", o.QUICCongestionControl)
+	}
+	if o.BBRProfile != nil {
+		if o.QUICCongestionControl != "bbr" {
+			return E.New("snell: bbr_profile requires BBR congestion control")
+		}
+		switch *o.BBRProfile {
+		case "standard", "conservative", "aggressive":
+		default:
+			return E.New("snell: unknown BBR profile: ", *o.BBRProfile)
+		}
+	}
+	return nil
 }
 
 type SnellOutboundOptions _SnellOutboundOptions
