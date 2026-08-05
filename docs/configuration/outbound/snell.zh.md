@@ -16,10 +16,13 @@ icon: material/new-box
   "version": 4,
   "psk": "password",
   "userkey": "",
+  "identity": false,
   "reuse": false,
   "network": "tcp",
   "obfs_mode": "",
   "obfs_host": "",
+
+  "tls": {},
 
   ... // 拨号字段
 }
@@ -83,6 +86,16 @@ Snell 协议版本，`4` `6` 之一。
 
 用户密钥，用于向多用户服务器进行认证。
 
+#### identity
+
+==仅版本 4==
+
+启用 oixCloud 服务器使用的非标准 Snell 身份标头。
+
+身份值为 `BLAKE3-512(psk)` 的前 16 字节。启用后，会在 Snell 初始 salt 后插入
+`DLSNID01` 和身份值。此选项默认关闭；连接使用 oixCloud 专有 Snell ECH-TLS 扩展的服务器时，
+必须由用户显式启用。
+
 #### reuse
 
 启用连接复用（Snell v2 `CONNECT` 命令）。
@@ -110,6 +123,48 @@ HTTP 混淆模式，`none` `http` 之一。
 `obfs_mode` 为 `http` 时发送的 HTTP `Host` 头。
 
 默认为 `bing.com`。
+
+#### tls
+
+==仅版本 4==
+
+TLS 配置，参阅 [TLS](/zh/configuration/shared/tls/)。
+
+用于 oixCloud 专有 Snell ECH-TLS 扩展时，必须启用 TLS，并将 `ech.enabled` 设为 `true`。
+TLS 连接直接承载 raw Snell v4，不使用 V2Ray 传输层，且不能与 `obfs_mode` 组合使用。
+请根据服务端配置 `alpn`；当前 oixCloud 部署使用 `h2`。
+
+示例：
+
+```json
+{
+  "type": "snell",
+  "tag": "snell-ech",
+  "server": "server.example.com",
+  "server_port": 443,
+  "version": 4,
+  "psk": "password",
+  "identity": true,
+  "reuse": true,
+  "tls": {
+    "enabled": true,
+    "server_name": "public.example.com",
+    "alpn": ["h2"],
+    "ech": {
+      "enabled": true,
+      "config": [
+        "-----BEGIN ECH CONFIGS-----",
+        "...",
+        "-----END ECH CONFIGS-----"
+      ]
+    },
+    "utls": {
+      "enabled": true,
+      "fingerprint": "chrome"
+    }
+  }
+}
+```
 
 #### mode
 
