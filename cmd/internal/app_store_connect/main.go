@@ -49,17 +49,20 @@ func main() {
 	}
 }
 
-const (
-	appID   = "6673731168"
-	groupID = "5c5f3b78-b7a0-40c0-bcad-e6ef87bbefda"
-)
+func requiredEnvironment(name string) string {
+	value := os.Getenv(name)
+	if value == "" {
+		log.Fatal(name, " is not set")
+	}
+	return value
+}
 
 func createClient(expireDuration time.Duration) *asc.Client {
-	privateKey, err := os.ReadFile(os.Getenv("ASC_KEY_PATH"))
+	privateKey, err := os.ReadFile(requiredEnvironment("ASC_KEY_PATH"))
 	if err != nil {
 		log.Fatal(err)
 	}
-	tokenConfig, err := asc.NewTokenConfig(os.Getenv("ASC_KEY_ID"), os.Getenv("ASC_KEY_ISSUER_ID"), expireDuration, privateKey)
+	tokenConfig, err := asc.NewTokenConfig(requiredEnvironment("ASC_KEY_ID"), requiredEnvironment("ASC_KEY_ISSUER_ID"), expireDuration, privateKey)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -67,6 +70,7 @@ func createClient(expireDuration time.Duration) *asc.Client {
 }
 
 func fetchMacOSVersion(ctx context.Context) error {
+	appID := requiredEnvironment("ASC_APP_ID")
 	client := createClient(time.Minute)
 	versions, _, err := client.Apps.ListAppStoreVersionsForApp(ctx, appID, &asc.ListAppStoreVersionsQuery{
 		FilterPlatform: []string{"MAC_OS"},
@@ -77,6 +81,9 @@ func fetchMacOSVersion(ctx context.Context) error {
 	var versionID string
 findVersion:
 	for _, version := range versions.Data {
+		if version.Attributes == nil || version.Attributes.AppStoreState == nil {
+			continue
+		}
 		switch *version.Attributes.AppStoreState {
 		case asc.AppStoreVersionStateReadyForSale,
 			asc.AppStoreVersionStatePendingDeveloperRelease:
@@ -84,18 +91,21 @@ findVersion:
 			break findVersion
 		}
 	}
-	if versionID == "" {
-		return E.New("no version found")
+	versionInt := 0
+	if versionID != "" {
+		latestBuild, _, err := client.Builds.GetBuildForAppStoreVersion(ctx, versionID, &asc.GetBuildForAppStoreVersionQuery{})
+		if err != nil {
+			return err
+		}
+		if latestBuild.Data.Attributes == nil || latestBuild.Data.Attributes.Version == nil {
+			return E.New("latest macos app store build has no version")
+		}
+		versionInt, err = strconv.Atoi(*latestBuild.Data.Attributes.Version)
+		if err != nil {
+			return E.Cause(err, "parse version code")
+		}
 	}
-	latestBuild, _, err := client.Builds.GetBuildForAppStoreVersion(ctx, versionID, &asc.GetBuildForAppStoreVersionQuery{})
-	if err != nil {
-		return err
-	}
-	versionInt, err := strconv.Atoi(*latestBuild.Data.Attributes.Version)
-	if err != nil {
-		return E.Cause(err, "parse version code")
-	}
-	os.Stdout.WriteString(F.ToString(versionInt+1, "\n"))
+	_, err = os.Stdout.WriteString(F.ToString(versionInt+1, "\n"))
 	return nil
 }
 
@@ -127,38 +137,112 @@ func publishTestflight(ctx context.Context) error {
 	}
 
 	client := createClient(20 * time.Minute)
+	appID := requiredEnvironment("ASC_APP_ID")
+	groupID := requiredEnvironment("ASC_TESTFLIGHT_GROUP_ID")
+	publishDeadline := time.Now().Add(time.Hour)
+	testflightType := os.Getenv("ASC_TESTFLIGHT_TYPE")
+	if testflightType == "" {
+		testflightType = "Internal"
+	}
+	var internalTesting bool
+	switch testflightType {
+	case "Internal":
+		internalTesting = true
+	case "External":
+	default:
+		return E.New("unknown TestFlight type: ", testflightType)
+	}
 
-	log.Info(tag, " list build IDs")
-	buildIDsResponse, _, err := client.TestFlight.ListBuildIDsForBetaGroup(ctx, groupID, nil)
+	log.Info(tag, " validate ", strings.ToLower(testflightType), " group")
+	groupResponse, _, err := client.TestFlight.GetBetaGroup(ctx, groupID, nil)
 	if err != nil {
 		return err
 	}
-	buildIDs := common.Map(buildIDsResponse.Data, func(it asc.RelationshipData) string {
-		return it.ID
-	})
+	if groupResponse.Data.Attributes == nil || groupResponse.Data.Attributes.IsInternalGroup == nil {
+		return E.New("beta group ", groupID, " does not report its testing type")
+	}
+	if *groupResponse.Data.Attributes.IsInternalGroup != internalTesting {
+		return E.New("beta group ", groupID, " does not match TestFlight type ", testflightType)
+	}
+	groupAppResponse, _, err := client.TestFlight.GetAppForBetaGroup(ctx, groupID, nil)
+	if err != nil {
+		return err
+	}
+	if groupAppResponse.Data.ID != appID {
+		return E.New("beta group ", groupID, " does not belong to app ", appID)
+	}
 
-	waitingForProcess := false
+	var candidateBuildID string
 	log.Info(string(platform), " list builds")
 	for {
 		builds, _, err := client.Builds.ListBuilds(ctx, &asc.ListBuildsQuery{
 			FilterApp:                       []string{appID},
+			FilterPreReleaseVersionVersion:  []string{tag},
 			FilterPreReleaseVersionPlatform: []string{string(platform)},
+			Sort:                            []string{"-uploadedDate"},
+			Limit:                           1,
 		})
 		if err != nil {
 			return err
 		}
-		build := builds.Data[0]
-		log.Info(string(platform), " ", tag, " found build: ", build.ID, " (", *build.Attributes.Version, ")")
-		if !waitingForProcess && (common.Contains(buildIDs, build.ID) || time.Since(build.Attributes.UploadedDate.Time) > 30*time.Minute) {
-			log.Info(string(platform), " ", tag, " waiting for process")
-			time.Sleep(15 * time.Second)
+		if len(builds.Data) == 0 {
+			if err = waitForTestFlight(publishDeadline, F.ToString(string(platform), " ", tag, " waiting for uploaded build")); err != nil {
+				return err
+			}
 			continue
 		}
+		build := builds.Data[0]
+		if build.Attributes == nil || build.Attributes.Version == nil || build.Attributes.UploadedDate == nil || build.Attributes.ProcessingState == nil {
+			return E.New(string(platform), " ", tag, " build ", build.ID, " has incomplete attributes")
+		}
+		log.Info(string(platform), " ", tag, " found build: ", build.ID, " (", *build.Attributes.Version, ")")
+		if candidateBuildID == "" {
+			if time.Since(build.Attributes.UploadedDate.Time) > 30*time.Minute {
+				if err = waitForTestFlight(publishDeadline, F.ToString(string(platform), " ", tag, " waiting for a newly uploaded build")); err != nil {
+					return err
+				}
+				continue
+			}
+			candidateBuildID = build.ID
+			log.Info(string(platform), " ", tag, " selected build: ", build.ID)
+		} else if build.ID != candidateBuildID {
+			candidateBuildID = build.ID
+			log.Info(string(platform), " ", tag, " selected newer build: ", build.ID)
+		}
 		if *build.Attributes.ProcessingState != "VALID" {
-			waitingForProcess = true
-			log.Info(string(platform), " ", tag, " waiting for process: ", *build.Attributes.ProcessingState)
-			time.Sleep(15 * time.Second)
+			if *build.Attributes.ProcessingState == "FAILED" || *build.Attributes.ProcessingState == "INVALID" {
+				return E.New(string(platform), " ", tag, " build processing failed: ", *build.Attributes.ProcessingState)
+			}
+			if err = waitForTestFlight(publishDeadline, F.ToString(string(platform), " ", tag, " waiting for build processing: ", *build.Attributes.ProcessingState)); err != nil {
+				return err
+			}
 			continue
+		}
+		if internalTesting {
+			betaDetail, response, err := client.TestFlight.GetBuildBetaDetailForBuild(ctx, build.ID, nil)
+			if response != nil && response.StatusCode == http.StatusNotFound {
+				if err = waitForTestFlight(publishDeadline, F.ToString(string(platform), " ", tag, " waiting for internal TestFlight details")); err != nil {
+					return err
+				}
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if betaDetail.Data.Attributes == nil || betaDetail.Data.Attributes.InternalBuildState == nil {
+				return E.New(string(platform), " ", tag, " build ", build.ID, " has no internal TestFlight state")
+			}
+			internalState := *betaDetail.Data.Attributes.InternalBuildState
+			switch internalState {
+			case asc.InternalBetaStateReadyForBetaTesting, asc.InternalBetaStateInTesting:
+			case asc.InternalBetaStateProcessing, asc.InternalBetaStateInExportComplianceReview:
+				if err = waitForTestFlight(publishDeadline, F.ToString(string(platform), " ", tag, " waiting for internal TestFlight state: ", internalState)); err != nil {
+					return err
+				}
+				continue
+			default:
+				return E.New(string(platform), " ", tag, " build is not eligible for internal testing: ", internalState)
+			}
 		}
 		log.Info(string(platform), " ", tag, " list localizations")
 		localizations, _, err := client.TestFlight.ListBetaBuildLocalizationsForBuild(ctx, build.ID, nil)
@@ -166,26 +250,71 @@ func publishTestflight(ctx context.Context) error {
 			return err
 		}
 		localization := common.Find(localizations.Data, func(it asc.BetaBuildLocalization) bool {
-			return *it.Attributes.Locale == "en-US"
+			return it.Attributes != nil && it.Attributes.Locale != nil && *it.Attributes.Locale == "en-US"
 		})
 		if localization.ID == "" {
-			log.Fatal(string(platform), " ", tag, " no en-US localization found")
-		}
-		if localization.Attributes == nil || localization.Attributes.WhatsNew == nil || *localization.Attributes.WhatsNew == "" {
+			if internalTesting {
+				log.Warn(string(platform), " ", tag, " no en-US localization found")
+			} else {
+				return E.New(string(platform), " ", tag, " no en-US localization found")
+			}
+		} else if localization.Attributes == nil || localization.Attributes.WhatsNew == nil || *localization.Attributes.WhatsNew == "" {
 			log.Info(string(platform), " ", tag, " update localization")
 			_, _, err = client.TestFlight.UpdateBetaBuildLocalization(ctx, localization.ID, common.Ptr(releaseNotes))
 			if err != nil {
 				return err
 			}
 		}
-		log.Info(string(platform), " ", tag, " publish")
-		response, err := client.TestFlight.AddBuildsToBetaGroup(ctx, groupID, []string{build.ID})
-		if response != nil && (response.StatusCode == http.StatusUnprocessableEntity || response.StatusCode == http.StatusNotFound) {
-			log.Info("waiting for process")
-			time.Sleep(15 * time.Second)
-			continue
-		} else if err != nil {
+		log.Info(string(platform), " ", tag, " check group membership")
+		groupBuilds, _, err := client.Builds.ListBuilds(ctx, &asc.ListBuildsQuery{
+			FilterID:         []string{build.ID},
+			FilterBetaGroups: []string{groupID},
+			Limit:            1,
+		})
+		if err != nil {
 			return err
+		}
+		alreadyPublished := len(groupBuilds.Data) != 0
+		if !alreadyPublished {
+			log.Info(string(platform), " ", tag, " publish")
+			response, err := client.TestFlight.AddBuildsToBetaGroup(ctx, groupID, []string{build.ID})
+			if response != nil && (response.StatusCode == http.StatusUnprocessableEntity || response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusConflict) {
+				if err = waitForTestFlight(publishDeadline, F.ToString(string(platform), " ", tag, " waiting to add build to beta group")); err != nil {
+					return err
+				}
+				continue
+			} else if err != nil {
+				return err
+			}
+		} else {
+			log.Info(string(platform), " ", tag, " build is already in beta group")
+		}
+		if internalTesting {
+			for {
+				betaDetail, response, err := client.TestFlight.GetBuildBetaDetailForBuild(ctx, build.ID, nil)
+				if response != nil && response.StatusCode == http.StatusNotFound {
+					if err = waitForTestFlight(publishDeadline, F.ToString(string(platform), " ", tag, " waiting for internal TestFlight details")); err != nil {
+						return err
+					}
+					continue
+				}
+				if err != nil {
+					return err
+				}
+				if betaDetail.Data.Attributes == nil || betaDetail.Data.Attributes.InternalBuildState == nil {
+					return E.New(string(platform), " ", tag, " build ", build.ID, " has no internal TestFlight state")
+				}
+				internalState := *betaDetail.Data.Attributes.InternalBuildState
+				if internalState == asc.InternalBetaStateInTesting {
+					return nil
+				}
+				if internalState != asc.InternalBetaStateReadyForBetaTesting && internalState != asc.InternalBetaStateProcessing && internalState != asc.InternalBetaStateInExportComplianceReview {
+					return E.New(string(platform), " ", tag, " build failed to enter internal testing: ", internalState)
+				}
+				if err = waitForTestFlight(publishDeadline, F.ToString(string(platform), " ", tag, " waiting for internal testing: ", internalState)); err != nil {
+					return err
+				}
+			}
 		}
 		log.Info(string(platform), " ", tag, " list submissions")
 		betaSubmissions, _, err := client.TestFlight.ListBetaAppReviewSubmissions(ctx, &asc.ListBetaAppReviewSubmissionsQuery{
@@ -210,6 +339,15 @@ func publishTestflight(ctx context.Context) error {
 	return nil
 }
 
+func waitForTestFlight(deadline time.Time, message string) error {
+	if time.Now().After(deadline) {
+		return E.New("timed out waiting for TestFlight: ", message)
+	}
+	log.Info(message)
+	time.Sleep(15 * time.Second)
+	return nil
+}
+
 func cancelAppStore(ctx context.Context, platform string) error {
 	switch platform {
 	case "ios":
@@ -223,6 +361,7 @@ func cancelAppStore(ctx context.Context, platform string) error {
 	if err != nil {
 		return err
 	}
+	appID := requiredEnvironment("ASC_APP_ID")
 	client := createClient(time.Minute)
 	for {
 		log.Info(platform, " list versions")
@@ -264,6 +403,7 @@ func prepareAppStore(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	appID := requiredEnvironment("ASC_APP_ID")
 	client := createClient(time.Minute)
 	for _, platform := range []asc.Platform{
 		asc.PlatformIOS,
@@ -404,6 +544,7 @@ func publishAppStore(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	appID := requiredEnvironment("ASC_APP_ID")
 	client := createClient(time.Minute)
 	for _, platform := range []asc.Platform{
 		asc.PlatformIOS,

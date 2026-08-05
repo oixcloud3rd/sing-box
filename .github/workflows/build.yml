@@ -22,8 +22,8 @@ on:
           - Apple-release
           - iOS
           - macOS
-          - tvOS
-          - macOS-standalone
+          # - macOS-standalone
+          # - tvOS
           - iOS-jailbreak
           - publish-android
       test_message:
@@ -32,13 +32,17 @@ on:
         type: string
   push:
     branches:
-      - stable
-      - testing
-      - unstable
+      - stable-patch
+      - testing-patch
+      - unstable-patch
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ inputs.build }}
   cancel-in-progress: true
+
+env:
+  OIXCLOUD_DNS_AUTH_PRIVATE_KEY: ${{ secrets.OIXCLOUD_DNS_AUTH_PRIVATE_KEY }}
+  OIXCLOUD_REQUIRE_DNS_AUTH_PRIVATE_KEY: "1"
 
 jobs:
   calculate_version:
@@ -235,7 +239,8 @@ jobs:
           echo "BUILD_TAGS=${TAGS}" >> "${GITHUB_ENV}"
       - name: Set shared ldflags
         run: |
-          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS)" >> "${GITHUB_ENV}"
+          CGO_ENABLED=0 go run ./cmd/internal/check_oixcloud_dns_auth_key
+          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS) -X 'github.com/sagernet/sing-box/constant.OIXCloudDNSAuthPrivateKey=${OIXCLOUD_DNS_AUTH_PRIVATE_KEY}'" >> "${GITHUB_ENV}"
       - name: Build (purego)
         if: matrix.variant == 'purego'
         run: |
@@ -530,7 +535,8 @@ jobs:
           echo "BUILD_TAGS=${TAGS}" >> "${GITHUB_ENV}"
       - name: Set shared ldflags
         run: |
-          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS)" >> "${GITHUB_ENV}"
+          go run ./cmd/internal/check_oixcloud_dns_auth_key
+          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS) -X 'github.com/sagernet/sing-box/constant.OIXCloudDNSAuthPrivateKey=${OIXCLOUD_DNS_AUTH_PRIVATE_KEY}'" >> "${GITHUB_ENV}"
       - name: Build
         run: |
           set -xeuo pipefail
@@ -602,11 +608,12 @@ jobs:
       - name: Build
         if: matrix.naive
         run: |
+          go run ./cmd/internal/check_oixcloud_dns_auth_key
           $TAGS = Get-Content release/DEFAULT_BUILD_TAGS_WINDOWS
           $LDFLAGS_SHARED = Get-Content release/LDFLAGS
           mkdir -p dist
           go build -v -trimpath -o dist/sing-box.exe -tags "$TAGS" `
-          -ldflags "-X 'github.com/sagernet/sing-box/constant.Version=${{ needs.calculate_version.outputs.version }}' $LDFLAGS_SHARED -s -w -buildid=" `
+          -ldflags "-X 'github.com/sagernet/sing-box/constant.Version=${{ needs.calculate_version.outputs.version }}' -X 'github.com/sagernet/sing-box/constant.OIXCloudDNSAuthPrivateKey=$env:OIXCLOUD_DNS_AUTH_PRIVATE_KEY' $LDFLAGS_SHARED -s -w -buildid=" `
           ./cmd/sing-box
         env:
           CGO_ENABLED: "0"
@@ -616,11 +623,12 @@ jobs:
       - name: Build
         if: ${{ !matrix.naive }}
         run: |
+          go run ./cmd/internal/check_oixcloud_dns_auth_key
           $TAGS = Get-Content release/DEFAULT_BUILD_TAGS_OTHERS
           $LDFLAGS_SHARED = Get-Content release/LDFLAGS
           mkdir -p dist
           go build -v -trimpath -o dist/sing-box.exe -tags "$TAGS" `
-          -ldflags "-X 'github.com/sagernet/sing-box/constant.Version=${{ needs.calculate_version.outputs.version }}' $LDFLAGS_SHARED -s -w -buildid=" `
+          -ldflags "-X 'github.com/sagernet/sing-box/constant.Version=${{ needs.calculate_version.outputs.version }}' -X 'github.com/sagernet/sing-box/constant.OIXCloudDNSAuthPrivateKey=$env:OIXCLOUD_DNS_AUTH_PRIVATE_KEY' $LDFLAGS_SHARED -s -w -buildid=" `
           ./cmd/sing-box
         env:
           CGO_ENABLED: "0"
@@ -670,7 +678,7 @@ jobs:
           path: "dist"
   build_android_library:
     name: Build Android library (${{ matrix.go_arch }})
-    if: (github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Android' || inputs.build == 'publish-android') && github.ref != 'refs/heads/oldstable'
+    if: (github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Android' || inputs.build == 'publish-android') && github.ref != 'refs/heads/oldstable-patch'
     runs-on: ubuntu-latest
     needs:
       - calculate_version
@@ -729,7 +737,7 @@ jobs:
           compression-level: 0
   build_android:
     name: Build Android (${{ matrix.variant }})
-    if: (github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Android') && github.ref != 'refs/heads/oldstable'
+    if: (github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Android') && github.ref != 'refs/heads/oldstable-patch'
     runs-on: ubuntu-latest
     needs:
       - calculate_version
@@ -793,19 +801,29 @@ jobs:
           go run ./cmd/internal/merge_aar -output libbox.aar libbox-inputs/*/libbox.aar
           go run ./cmd/internal/merge_aar -output libbox-legacy.aar libbox-inputs/*/libbox-legacy.aar
       - name: Checkout main branch
-        if: github.ref == 'refs/heads/stable' && github.event_name != 'workflow_dispatch'
+        if: github.ref == 'refs/heads/stable-patch'
         run: |-
           cd clients/android
-          git checkout main
+          git checkout main-patch
       - name: Checkout dev branch
-        if: github.ref == 'refs/heads/testing'
+        if: github.ref == 'refs/heads/testing-patch'
         run: |-
           cd clients/android
-          git checkout dev
+          git checkout dev-patch
       - name: Checkout submodule recursive
         run: |-
           cd clients/android
           git submodule update --init --recursive -v
+      - name: Prepare Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |-
+          set -euo pipefail
+          if [[ -z "${ANDROID_KEYSTORE_BASE64}" ]]; then
+            echo "ANDROID_KEYSTORE_BASE64 secret is required for Android builds" >&2
+            exit 1
+          fi
+          printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > clients/android/app/release.keystore
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
         with:
@@ -835,6 +853,7 @@ jobs:
           VERSION_NAME=$(grep VERSION_NAME clients/android/version.properties | cut -d= -f2)
           cat > dist/SFA-version-metadata.json << EOF
           {
+            "application_id": "com.akinokaede.oixcloud3rd.sfa",
             "version_code": ${VERSION_CODE},
             "version_name": "${VERSION_NAME}"
           }
@@ -847,7 +866,7 @@ jobs:
           path: 'dist'
   publish_android:
     name: Publish Android
-    if: github.event_name == 'workflow_dispatch' && inputs.build == 'publish-android' && (github.ref == 'refs/heads/stable' || github.ref == 'refs/heads/testing')
+    if: github.event_name == 'workflow_dispatch' && inputs.build == 'publish-android' && (github.ref == 'refs/heads/stable-patch' || github.ref == 'refs/heads/testing-patch')
     runs-on: ubuntu-latest
     needs:
       - calculate_version
@@ -901,15 +920,15 @@ jobs:
           go run ./cmd/internal/merge_aar -output libbox.aar libbox-inputs/*/libbox.aar
           go run ./cmd/internal/merge_aar -output libbox-legacy.aar libbox-inputs/*/libbox-legacy.aar
       - name: Checkout main branch
-        if: github.ref == 'refs/heads/stable' && github.event_name != 'workflow_dispatch'
+        if: github.ref == 'refs/heads/stable-patch'
         run: |-
           cd clients/android
-          git checkout main
+          git checkout main-patch
       - name: Checkout dev branch
-        if: github.ref == 'refs/heads/testing'
+        if: github.ref == 'refs/heads/testing-patch'
         run: |-
           cd clients/android
-          git checkout dev
+          git checkout dev-patch
       - name: Checkout submodule recursive
         run: |-
           cd clients/android
@@ -946,7 +965,7 @@ jobs:
           LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
   build_windows_client:
     name: Build Windows client (${{ matrix.desktop_arch }})
-    if: (github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Windows') && github.ref != 'refs/heads/oldstable'
+    if: (github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Windows') && github.ref != 'refs/heads/oldstable-patch'
     runs-on: windows-latest
     needs:
       - calculate_version
@@ -965,8 +984,8 @@ jobs:
       - name: Checkout desktop client
         run: git submodule update --init clients/desktop
       - name: Checkout main branch
-        if: github.ref == 'refs/heads/testing'
-        run: git -C clients/desktop checkout main
+        if: github.ref == 'refs/heads/testing-patch'
+        run: git -C clients/desktop checkout main-patch
       - name: Checkout desktop submodules
         run: git -C clients/desktop submodule update --init --recursive
       - name: Setup Go
@@ -1056,7 +1075,7 @@ jobs:
           path: 'dist'
   build_linux_client:
     name: Build Linux client (${{ matrix.desktop_arch }})
-    if: (github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Linux') && github.ref != 'refs/heads/oldstable'
+    if: (github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Linux') && github.ref != 'refs/heads/oldstable-patch'
     runs-on: ubuntu-26.04
     needs:
       - calculate_version
@@ -1074,8 +1093,8 @@ jobs:
       - name: Checkout desktop client
         run: git submodule update --init clients/desktop
       - name: Checkout main branch
-        if: github.ref == 'refs/heads/testing'
-        run: git -C clients/desktop checkout main
+        if: github.ref == 'refs/heads/testing-patch'
+        run: git -C clients/desktop checkout main-patch
       - name: Checkout desktop submodules
         run: git -C clients/desktop submodule update --init --recursive
       - name: Setup Go
@@ -1209,7 +1228,7 @@ jobs:
   build_apple_library:
     name: Build Apple library (${{ matrix.artifact }})
     runs-on: ${{ matrix.build && 'macos-26' || 'ubuntu-latest' }}
-    if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'iOS' || inputs.build == 'macOS' || inputs.build == 'tvOS' || inputs.build == 'macOS-standalone' || inputs.build == 'iOS-jailbreak'
+    if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'iOS' || inputs.build == 'macOS' || inputs.build == 'iOS-jailbreak'
     needs:
       - calculate_version
     strategy:
@@ -1219,15 +1238,16 @@ jobs:
           - artifact: ios-arm64
             platform: ios/arm64
             build: ${{ github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'iOS' || inputs.build == 'iOS-jailbreak' }}
-          - artifact: tvos-arm64
-            platform: tvos/arm64
-            build: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'tvOS') }}
+          # SFT is disabled until a tvOS development signing device is available.
+          # - artifact: tvos-arm64
+          #   platform: tvos/arm64
+          #   build: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'tvOS') }}
           - artifact: macos-arm64
             platform: macos/arm64
-            build: ${{ github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'macOS' || inputs.build == 'macOS-standalone' }}
+            build: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'macOS') }}
           - artifact: macos-amd64
             platform: macos/amd64
-            build: ${{ github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'macOS' || inputs.build == 'macOS-standalone' }}
+            build: ${{ github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'macOS') }}
     steps:
       - name: Checkout
         if: matrix.build
@@ -1273,9 +1293,9 @@ jobs:
           path: dist
           compression-level: 1
   build_apple:
-    name: Build Apple release clients
+    name: Build Apple standalone and jailbreak clients
     runs-on: ${{ matrix.if && 'macos-26' || 'ubuntu-latest' }}
-    if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple-release' || inputs.build == 'macOS-standalone' || inputs.build == 'iOS-jailbreak'
+    if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'iOS-jailbreak'
     needs:
       - calculate_version
       - build_apple_library
@@ -1283,12 +1303,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: macOS-standalone
-            if: ${{ github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple-release' || inputs.build == 'macOS-standalone' }}
-            type: standalone
-            platform: macos
-            variant: all
-            library_arch: '*'
+          # Standalone is disabled until private artifact distribution is available.
+          # - name: macOS-standalone
+          #   if: ${{ github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple-release' || inputs.build == 'macOS-standalone' }}
+          #   type: standalone
+          #   platform: macos
+          #   variant: all
+          #   library_arch: '*'
+          #   scheme: ''
+          #   destination: ''
+          #   archive: ''
+          #   upload: ''
+          - name: iOS-jailbreak
+            if: ${{ github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'iOS-jailbreak' }}
+            type: jailbreak
+            platform: ios
+            variant: ''
+            library_arch: ''
             scheme: ''
             destination: ''
             archive: ''
@@ -1339,15 +1370,15 @@ jobs:
           git tag v${{ needs.calculate_version.outputs.version }} -f
           echo "VERSION=${{ needs.calculate_version.outputs.version }}" >> "$GITHUB_ENV"
       - name: Checkout main branch
-        if: matrix.if && github.ref == 'refs/heads/stable' && github.event_name != 'workflow_dispatch'
+        if: matrix.if && github.ref == 'refs/heads/stable-patch' && github.event_name != 'workflow_dispatch'
         run: |-
           cd clients/apple
-          git checkout main
+          git checkout main-patch
       - name: Checkout dev branch
-        if: matrix.if && github.ref == 'refs/heads/testing'
+        if: matrix.if && github.ref == 'refs/heads/testing-patch'
         run: |-
           cd clients/apple
-          git checkout dev
+          git checkout dev-patch
       - name: Cache Swift packages
         if: matrix.if
         uses: actions/cache@v4
@@ -1367,15 +1398,50 @@ jobs:
       - name: Setup App Store Connect key
         if: matrix.if && matrix.type != 'jailbreak' && github.event_name == 'workflow_dispatch'
         run: |-
+          set -euo pipefail
           ASC_KEY_PATH=$RUNNER_TEMP/AuthKey.p8
-          echo -n "$ASC_KEY" | base64 --decode -o $ASC_KEY_PATH
+          echo -n "$ASC_KEY" | base64 --decode -o "$ASC_KEY_PATH"
           echo "ASC_KEY_PATH=$ASC_KEY_PATH" >> "$GITHUB_ENV"
           echo "ASC_KEY_ID=$ASC_KEY_ID" >> "$GITHUB_ENV"
           echo "ASC_KEY_ISSUER_ID=$ASC_KEY_ISSUER_ID" >> "$GITHUB_ENV"
+          if [[ "$CLIENT_TYPE" == "app-store" ]]; then
+            if [[ ! "$ASC_APP_ID" =~ ^[0-9]+$ ]]; then
+              echo "ASC_APP_ID must be a numeric App Store Connect app ID" >&2
+              exit 1
+            fi
+            ASC_TESTFLIGHT_TYPE=${ASC_TESTFLIGHT_TYPE:-Internal}
+            if [[ "$ASC_TESTFLIGHT_TYPE" != "Internal" && "$ASC_TESTFLIGHT_TYPE" != "External" ]]; then
+              echo "ASC_TESTFLIGHT_TYPE must be Internal or External" >&2
+              exit 1
+            fi
+            if [[ -z "$ASC_TESTFLIGHT_GROUP_ID" ]]; then
+              echo "ASC_TESTFLIGHT_GROUP_ID must not be empty" >&2
+              exit 1
+            fi
+            echo "ASC_APP_ID=$ASC_APP_ID" >> "$GITHUB_ENV"
+            echo "ASC_TESTFLIGHT_GROUP_ID=$ASC_TESTFLIGHT_GROUP_ID" >> "$GITHUB_ENV"
+            echo "ASC_TESTFLIGHT_TYPE=$ASC_TESTFLIGHT_TYPE" >> "$GITHUB_ENV"
+          fi
         env:
+          CLIENT_TYPE: ${{ matrix.type }}
           ASC_KEY: ${{ secrets.ASC_KEY }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_KEY_ISSUER_ID: ${{ secrets.ASC_KEY_ISSUER_ID }}
+          ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
+          ASC_TESTFLIGHT_GROUP_ID: ${{ secrets.ASC_TESTFLIGHT_GROUP_ID }}
+          ASC_TESTFLIGHT_TYPE: ${{ vars.ASC_TESTFLIGHT_TYPE }}
+      - name: Configure Apple Team ID
+        if: matrix.if && matrix.type != 'jailbreak'
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |-
+          set -euo pipefail
+          if [[ ! "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+            echo "APPLE_TEAM_ID must be a 10-character Apple Team ID" >&2
+            exit 1
+          fi
+          echo "::add-mask::$APPLE_TEAM_ID"
+          printf 'DEVELOPMENT_TEAM = %s\n' "$APPLE_TEAM_ID" > clients/apple/Configuration/Signing.xcconfig
       - name: Install Apple provisioning profiles
         if: matrix.if && matrix.type != 'jailbreak'
         run: |-
@@ -1389,10 +1455,10 @@ jobs:
             "$PROVISIONING_PROFILES_6" \
             "$PROVISIONING_PROFILES_7" \
             "$PROVISIONING_PROFILES_8" \
-            | base64 --decode -o $PROFILES_ZIP_PATH
+            | base64 --decode -o "$PROFILES_ZIP_PATH"
           PROFILES_PATH="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
           mkdir -p "$PROFILES_PATH"
-          unzip -q $PROFILES_ZIP_PATH -d "$PROFILES_PATH"
+          unzip -q "$PROFILES_ZIP_PATH" -d "$PROFILES_PATH"
         env:
           PROVISIONING_PROFILES_1: ${{ secrets.APPLE_PROVISIONING_PROFILES_1 }}
           PROVISIONING_PROFILES_2: ${{ secrets.APPLE_PROVISIONING_PROFILES_2 }}
@@ -1407,15 +1473,19 @@ jobs:
         run: |-
           CERTIFICATE_PATH=$RUNNER_TEMP/AppleDevelopment.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/apple-development.keychain-db
-          echo -n "$APPLE_DEVELOPMENT_CERTIFICATES_P12" | base64 --decode -o $CERTIFICATE_PATH
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security list-keychains -d user -s $KEYCHAIN_PATH
-          security default-keychain -d user -s $KEYCHAIN_PATH
-          security find-identity -v -p codesigning $KEYCHAIN_PATH
+          echo -n "$APPLE_DEVELOPMENT_CERTIFICATES_P12" | base64 --decode -o "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -d user -s "$KEYCHAIN_PATH"
+          SIGNING_IDENTITIES=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH")
+          while IFS= read -r DEVELOPER_NAME; do
+            [[ -n "$DEVELOPER_NAME" ]] && echo "::add-mask::$DEVELOPER_NAME"
+          done < <(printf '%s\n' "$SIGNING_IDENTITIES" | sed -nE 's/.*"Apple (Development|Distribution): (.*) \([^)]*\)".*/\2/p' | sort -u)
+          printf '%s\n' "$SIGNING_IDENTITIES"
           echo "APPLE_DEVELOPMENT_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
         env:
           APPLE_DEVELOPMENT_CERTIFICATES_P12: ${{ secrets.APPLE_DEVELOPMENT_CERTIFICATES_P12 }}
@@ -1426,15 +1496,20 @@ jobs:
         run: |-
           CERTIFICATE_PATH=$RUNNER_TEMP/DeveloperIDCertificates.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/developer-id.keychain-db
-          echo -n "$DEVELOPER_ID_CERTIFICATES_P12" | base64 --decode -o $CERTIFICATE_PATH
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security list-keychains -d user -s $KEYCHAIN_PATH $APPLE_DEVELOPMENT_KEYCHAIN_PATH
-          security default-keychain -d user -s $KEYCHAIN_PATH
-          security find-identity -v -p codesigning $KEYCHAIN_PATH
+          echo -n "$DEVELOPER_ID_CERTIFICATES_P12" | base64 --decode -o "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "$APPLE_DEVELOPMENT_KEYCHAIN_PATH"
+          security default-keychain -d user -s "$KEYCHAIN_PATH"
+          APPLICATION_IDENTITIES=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH")
+          DEVELOPER_ID_IDENTITIES=$(security find-identity -v -p basic "$KEYCHAIN_PATH")
+          while IFS= read -r DEVELOPER_NAME; do
+            [[ -n "$DEVELOPER_NAME" ]] && echo "::add-mask::$DEVELOPER_NAME"
+          done < <(printf '%s\n%s\n' "$APPLICATION_IDENTITIES" "$DEVELOPER_ID_IDENTITIES" | sed -nE 's/.*"Developer ID (Application|Installer): (.*) \([^)]*\)".*/\2/p' | sort -u)
+          printf '%s\n%s\n' "$APPLICATION_IDENTITIES" "$DEVELOPER_ID_IDENTITIES"
           echo "SIGNING_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
         env:
           DEVELOPER_ID_CERTIFICATES_P12: ${{ secrets.DEVELOPER_ID_CERTIFICATES_P12 }}
@@ -1443,12 +1518,12 @@ jobs:
       - name: Setup notarization credentials
         if: matrix.if && matrix.type == 'standalone' && github.event_name == 'workflow_dispatch'
         run: |-
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $SIGNING_KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$SIGNING_KEYCHAIN_PATH"
           xcrun notarytool store-credentials "notarytool-password" \
-            --key $ASC_KEY_PATH \
-            --key-id $ASC_KEY_ID \
-            --issuer $ASC_KEY_ISSUER_ID \
-            --keychain $SIGNING_KEYCHAIN_PATH
+            --key "$ASC_KEY_PATH" \
+            --key-id "$ASC_KEY_ID" \
+            --issuer "$ASC_KEY_ISSUER_ID" \
+            --keychain "$SIGNING_KEYCHAIN_PATH"
         env:
           KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
       - name: Install jailbreak packaging tools
@@ -1511,12 +1586,12 @@ jobs:
           cd clients/apple
           xcodebuild -exportArchive \
             -archivePath "${{ matrix.archive }}" \
-            -exportOptionsPlist ${{ matrix.upload }} \
-            -authenticationKeyPath $ASC_KEY_PATH \
-            -authenticationKeyID $ASC_KEY_ID \
-            -authenticationKeyIssuerID $ASC_KEY_ISSUER_ID
+            -exportOptionsPlist "${{ matrix.upload }}" \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_KEY_ISSUER_ID"
       - name: Publish to TestFlight
-        if: matrix.if && matrix.type == 'app-store' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/testing'
+        if: matrix.if && matrix.type == 'app-store' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/testing-patch'
         run: |-
           arguments=(publish_testflight "${{ matrix.platform }}")
           if [[ -n "$TEST_MESSAGE" ]]; then
@@ -1574,7 +1649,7 @@ jobs:
   build_apple_app_store:
     name: Build Apple App Store clients
     runs-on: ${{ matrix.if && 'macos-26' || 'ubuntu-latest' }}
-    if: github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'iOS' || inputs.build == 'macOS' || inputs.build == 'tvOS')
+    if: github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'iOS' || inputs.build == 'macOS')
     needs:
       - calculate_version
       - build_apple_library
@@ -1602,20 +1677,21 @@ jobs:
             upload: SFI/Upload.plist
             variant: ''
             library_arch: ''
-          - name: tvOS
-            if: ${{ inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'tvOS' }}
-            type: app-store
-            platform: tvos
-            scheme: SFT
-            destination: 'generic/platform=tvOS'
-            archive: build/SFT.xcarchive
-            upload: SFI/Upload.plist
-            variant: ''
-            library_arch: ''
+          # SFT is disabled until a tvOS development signing device is available.
+          # - name: tvOS
+          #   if: ${{ inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'tvOS' }}
+          #   type: app-store
+          #   platform: tvos
+          #   scheme: SFT
+          #   destination: 'generic/platform=tvOS'
+          #   archive: build/SFT.xcarchive
+          #   upload: SFI/Upload.plist
+          #   variant: ''
+          #   library_arch: ''
     steps: *build_apple_steps
   upload:
     name: Upload builds
-    if: "!failure() && github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Binary' || inputs.build == 'Android' || inputs.build == 'Windows' || inputs.build == 'Linux' || inputs.build == 'Apple-release' || inputs.build == 'macOS-standalone' || inputs.build == 'iOS-jailbreak')"
+    if: "!failure() && github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Binary' || inputs.build == 'Android' || inputs.build == 'Windows' || inputs.build == 'Linux' || inputs.build == 'Apple-release' || inputs.build == 'iOS-jailbreak')"
     runs-on: ubuntu-latest
     permissions:
       contents: write
