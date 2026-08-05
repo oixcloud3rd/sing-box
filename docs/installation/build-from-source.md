@@ -43,6 +43,32 @@ or
 go build -tags "tag_a tag_b" ./cmd/sing-box
 ```
 
+### oixCloud DNS auth private key
+
+oixCloud DNS authentication requires a Base64-encoded 32-byte Ed25519 seed embedded at link time. The standard Makefile reads it from `OIXCLOUD_DNS_AUTH_PRIVATE_KEY`:
+
+```bash
+OIXCLOUD_DNS_AUTH_PRIVATE_KEY='<base64-ed25519-seed>' make build
+```
+
+Alternatively, copy `.env.example` to `.env` in the repository root and set the key there:
+
+```dotenv
+OIXCLOUD_DNS_AUTH_PRIVATE_KEY=<base64-ed25519-seed>
+```
+
+The Makefile loads `.env` automatically when it exists. `.env` is ignored by Git. A value supplied through the environment or on the `make` command line takes precedence over `.env`.
+
+For a direct Go build, set the linker variable explicitly:
+
+```bash
+go build -ldflags "-X github.com/sagernet/sing-box/constant.OIXCloudDNSAuthPrivateKey=<base64-ed25519-seed>" ./cmd/sing-box
+```
+
+Release and packaging tasks require `OIXCLOUD_DNS_AUTH_PRIVATE_KEY` and fail when it is missing or invalid. Ordinary development builds may omit it, but a configuration using `oixcloud: true` then fails during DNS server initialization.
+
+The private key is stored in the resulting executable and can be extracted by an attacker with access to the binary. Compile-time injection prevents runtime configuration but is not secure hardware-backed key storage.
+
 ## :material-folder-settings: Build Tags
 
 | Build Tag                          | Enabled by default   | Description                                                                                                                                                                                                                                                                                                                    |

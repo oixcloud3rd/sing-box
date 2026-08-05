@@ -3,8 +3,8 @@ name: Build Linux Packages
 on:
   #push:
   #  branches:
-  #    - stable
-  #    - testing
+  #    - stable-patch
+  #    - testing-patch
   workflow_dispatch:
     inputs:
       version:
@@ -14,6 +14,10 @@ on:
   release:
     types:
       - published
+
+env:
+  OIXCLOUD_DNS_AUTH_PRIVATE_KEY: ${{ secrets.OIXCLOUD_DNS_AUTH_PRIVATE_KEY }}
+  OIXCLOUD_REQUIRE_DNS_AUTH_PRIVATE_KEY: "1"
 
 jobs:
   calculate_version:
@@ -129,7 +133,8 @@ jobs:
           echo "BUILD_TAGS=${TAGS}" >> "${GITHUB_ENV}"
       - name: Set shared ldflags
         run: |
-          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS)" >> "${GITHUB_ENV}"
+          CGO_ENABLED=0 go run ./cmd/internal/check_oixcloud_dns_auth_key
+          echo "LDFLAGS_SHARED=$(cat release/LDFLAGS) -X 'github.com/sagernet/sing-box/constant.OIXCloudDNSAuthPrivateKey=${OIXCLOUD_DNS_AUTH_PRIVATE_KEY}'" >> "${GITHUB_ENV}"
       - name: Build (naive)
         if: matrix.naive
         run: |
@@ -240,4 +245,4 @@ jobs:
       - name: Publish packages
         if: github.event_name != 'push'
         run: |-
-          ls dist | xargs -I {} curl -F "package=@dist/{}" https://${{ secrets.FURY_TOKEN }}@push.fury.io/sagernet/
+          ls dist | xargs -I {} curl -F "package=@dist/{}" https://${{ secrets.FURY_TOKEN }}@push.fury.io/oixcloud3rd/

@@ -47,6 +47,32 @@ or
 go build -tags "tag_a tag_b" ./cmd/sing-box
 ```
 
+### oixCloud DNS 认证私钥
+
+oixCloud DNS 认证需要在链接时嵌入一个 Base64 编码的 32 字节 Ed25519 seed。标准 Makefile 从 `OIXCLOUD_DNS_AUTH_PRIVATE_KEY` 读取：
+
+```bash
+OIXCLOUD_DNS_AUTH_PRIVATE_KEY='<base64-ed25519-seed>' make build
+```
+
+也可以将仓库根目录的 `.env.example` 复制为 `.env`，然后在其中填写密钥：
+
+```dotenv
+OIXCLOUD_DNS_AUTH_PRIVATE_KEY=<base64-ed25519-seed>
+```
+
+Makefile 会在 `.env` 存在时自动加载它，且 `.env` 已被 Git 忽略。通过环境变量或 `make` 命令行传入的值优先于 `.env`。
+
+直接使用 Go 构建时，显式设置链接器变量：
+
+```bash
+go build -ldflags "-X github.com/sagernet/sing-box/constant.OIXCloudDNSAuthPrivateKey=<base64-ed25519-seed>" ./cmd/sing-box
+```
+
+发布和打包任务强制要求 `OIXCLOUD_DNS_AUTH_PRIVATE_KEY`，密钥缺失或无效时会失败。普通开发构建可以不提供密钥，但此类构建在配置 `oixcloud: true` 时会在 DNS 服务器初始化阶段失败。
+
+私钥会保存在最终可执行文件中，能访问二进制文件的攻击者仍可能提取它。编译时注入避免了运行时配置，但不等同于硬件级安全密钥存储。
+
 ## :material-folder-settings: 构建标记
 
 | 构建标记                               | 默认启动              | 说明                                                                                                                                                                                                                                                                                                                             |
