@@ -2131,6 +2131,9 @@
               "minimum": 0,
               "maximum": 65535
             },
+            "oixcloud": {
+              "type": "boolean"
+            },
             "tls": {
               "$ref": "#/$defs/OutboundTLSOptions"
             },
@@ -2308,6 +2311,9 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 65535
+            },
+            "oixcloud": {
+              "type": "boolean"
             },
             "tls": {
               "$ref": "#/$defs/OutboundTLSOptions"
@@ -2764,6 +2770,9 @@
               "minimum": 0,
               "maximum": 65535
             },
+            "oixcloud": {
+              "type": "boolean"
+            },
             "tls": {
               "$ref": "#/$defs/OutboundTLSOptions"
             }
@@ -2933,6 +2942,9 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 65535
+            },
+            "oixcloud": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -3055,6 +3067,9 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 65535
+            },
+            "oixcloud": {
+              "type": "boolean"
             },
             "tls": {
               "$ref": "#/$defs/OutboundTLSOptions"
@@ -3180,6 +3195,9 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 65535
+            },
+            "oixcloud": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -6999,6 +7017,12 @@
                     "$ref": "#/$defs/SnellUser"
                   }
                 },
+                "identity": {
+                  "type": "boolean"
+                },
+                "tls": {
+                  "$ref": "#/$defs/InboundTLSOptions"
+                },
                 "obfs_mode": {
                   "type": "string",
                   "enum": [
@@ -7089,6 +7113,12 @@
                   "items": {
                     "$ref": "#/$defs/SnellUser"
                   }
+                },
+                "identity": {
+                  "type": "boolean"
+                },
+                "tls": {
+                  "$ref": "#/$defs/InboundTLSOptions"
                 },
                 "mode": {
                   "type": "string",
@@ -12315,8 +12345,25 @@
                 "userkey": {
                   "type": "string"
                 },
+                "identity": {
+                  "type": "integer",
+                  "enum": [
+                    1,
+                    2
+                  ]
+                },
                 "reuse": {
                   "type": "boolean"
+                },
+                "preconnect": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1,
+                    2,
+                    3,
+                    4
+                  ]
                 },
                 "network": {
                   "anyOf": [
@@ -12338,6 +12385,9 @@
                       }
                     }
                   ]
+                },
+                "tls": {
+                  "$ref": "#/$defs/OutboundTLSOptions"
                 },
                 "obfs_mode": {
                   "type": "string",
@@ -12482,8 +12532,25 @@
                 "userkey": {
                   "type": "string"
                 },
+                "identity": {
+                  "type": "integer",
+                  "enum": [
+                    1,
+                    2
+                  ]
+                },
                 "reuse": {
                   "type": "boolean"
+                },
+                "preconnect": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1,
+                    2,
+                    3,
+                    4
+                  ]
                 },
                 "network": {
                   "anyOf": [
@@ -12505,6 +12572,9 @@
                       }
                     }
                   ]
+                },
+                "tls": {
+                  "$ref": "#/$defs/OutboundTLSOptions"
                 },
                 "mode": {
                   "type": "string",
