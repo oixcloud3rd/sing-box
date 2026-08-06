@@ -15,13 +15,15 @@ icon: material/new-box
 
   "version": 5,
   "psk": "password",
+  "identity": false,
   "users": [
     {
       "name": "sekai",
       "userkey": "user-password"
     }
   ],
-  "obfs_mode": ""
+  "obfs_mode": "",
+  "tls": {}
 }
 ```
 
@@ -79,6 +81,16 @@ Snell users.
 When set, the server runs in multi-user mode: each entry has a `name` (optional, used in
 logs) and a `userkey` (the user's key). The top-level `psk` remains the server key.
 
+#### identity
+
+==Version 5 only==
+
+Enable Snell identity parsing.
+
+When enabled, the server selects the identity version from the wire magic: `DLSNID01` uses
+Identity v1, while `DLSNID02` uses Identity v2 and verifies its TLS-exporter-bound authentication
+tag. Identity v2 therefore requires ECH-TLS and an accepted ECH handshake.
+
 #### obfs_mode
 
 ==Version 5 only==
@@ -86,6 +98,14 @@ logs) and a `userkey` (the user's key). The top-level `psk` remains the server k
 HTTP obfuscation mode, one of `none` `http`.
 
 `none` is used by default.
+
+#### tls
+
+==Version 5 only==
+
+TLS configuration, see [TLS](/configuration/shared/tls/). Snell ECH-TLS requires TLS and ECH to be
+enabled and cannot be combined with `obfs_mode`. `alpn` is empty by default; if configured, the
+negotiated value must match the configured list. Identity v2 is not tied to a particular ALPN.
 
 #### mode
 

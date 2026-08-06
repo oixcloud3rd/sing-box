@@ -18,8 +18,10 @@ type _SnellInboundOptions struct {
 
 type AbstractSnellInboundOptions struct {
 	ListenOptions
-	PSK   string      `json:"psk"`
-	Users []SnellUser `json:"users,omitempty"`
+	PSK      string      `json:"psk"`
+	Users    []SnellUser `json:"users,omitempty"`
+	Identity bool        `json:"identity,omitempty"`
+	InboundTLSOptionsContainer
 }
 
 type SnellInboundOptions _SnellInboundOptions
@@ -77,11 +79,12 @@ type _SnellOutboundOptions struct {
 type AbstractSnellOutboundOptions struct {
 	DialerOptions
 	ServerOptions
-	PSK      string      `json:"psk"`
-	UserKey  string      `json:"userkey,omitempty"`
-	Identity bool        `json:"identity,omitempty"`
-	Reuse    bool        `json:"reuse,omitempty"`
-	Network  NetworkList `json:"network,omitempty"`
+	PSK        string      `json:"psk"`
+	UserKey    string      `json:"userkey,omitempty"`
+	Identity   *int        `json:"identity,omitempty" enum:"1,2"`
+	Reuse      bool        `json:"reuse,omitempty"`
+	Preconnect int         `json:"preconnect,omitempty" enum:"0,1,2,3,4"`
+	Network    NetworkList `json:"network,omitempty"`
 	OutboundTLSOptionsContainer
 }
 

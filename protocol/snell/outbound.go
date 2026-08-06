@@ -3,6 +3,8 @@ package snell
 import (
 	"context"
 	"net"
+	"sync"
+	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/outbound"
@@ -28,10 +30,18 @@ func RegisterOutbound(registry *outbound.Registry) {
 
 type Outbound struct {
 	outbound.Adapter
+	ctx        context.Context
 	logger     logger.ContextLogger
 	dialer     N.Dialer
 	client     snellClient
 	serverAddr M.Socksaddr
+	preconnect int
+
+	lifecycleAccess  sync.Mutex
+	started          bool
+	closed           bool
+	preconnectCancel context.CancelFunc
+	preconnectDone   chan struct{}
 }
 
 var _ adapter.InterfaceUpdateListener = (*Outbound)(nil)
@@ -43,6 +53,10 @@ type snellClient interface {
 	Close() error
 }
 
+type snellPreconnectClient interface {
+	Preconnect(ctx context.Context, count int) error
+}
+
 func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.SnellOutboundOptions) (adapter.Outbound, error) {
 	err := validateIdentityOptions(options)
 	if err != nil {
@@ -50,6 +64,9 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 	}
 	echTLSEnabled, err := validateECHTLSOptions(options)
 	if err != nil {
+		return nil, err
+	}
+	if err = validatePreconnectOptions(options, echTLSEnabled); err != nil {
 		return nil, err
 	}
 	outboundDialer, err := dialer.New(ctx, options.DialerOptions, options.ServerIsDomain())
@@ -63,7 +80,10 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 		if err != nil {
 			return nil, E.Cause(err, "create Snell ECH-TLS client")
 		}
-		serverDialer = tls.NewDialer(outboundDialer, tlsConfig)
+		if err = tls.ConfigureSnellECHClient(tlsConfig); err != nil {
+			return nil, err
+		}
+		serverDialer = &echTLSDialer{Dialer: tls.NewDialer(outboundDialer, tlsConfig), alpn: []string(options.TLS.ALPN)}
 	}
 	var client snellClient
 	switch options.Version {
@@ -76,7 +96,7 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 		client, err = snellv4.NewClient(snellv4.ClientOptions{
 			PSK:      []byte(options.PSK),
 			UserKey:  []byte(options.UserKey),
-			Identity: options.Identity,
+			Identity: snellprotocol.IdentityVersion(common.PtrValueOrDefault(options.Identity)),
 			Reuse:    options.Reuse,
 			ObfsMode: obfsMode,
 			ObfsHost: options.ObfsOptions.ObfsHost,
@@ -107,17 +127,42 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 	}
 	outbound := &Outbound{
 		Adapter:    outbound.NewAdapterWithDialerOptions(C.TypeSnell, tag, options.Network.Build(), options.DialerOptions),
+		ctx:        ctx,
 		logger:     logger,
 		dialer:     serverDialer,
 		client:     client,
 		serverAddr: serverAddr,
+		preconnect: options.Preconnect,
 	}
 	return outbound, nil
 }
 
 func validateIdentityOptions(options option.SnellOutboundOptions) error {
-	if options.Identity && options.Version != 4 {
+	if options.Identity == nil {
+		return nil
+	}
+	identity := *options.Identity
+	if identity != 1 && identity != 2 {
+		return E.New("snell: identity must be 1 or 2")
+	}
+	if options.Version != 4 {
 		return E.New("snell: identity requires version 4")
+	}
+	if identity == 2 && (options.TLS == nil || !options.TLS.Enabled || options.TLS.ECH == nil || !options.TLS.ECH.Enabled) {
+		return E.New("snell: identity v2 requires ECH-TLS")
+	}
+	return nil
+}
+
+func validatePreconnectOptions(options option.SnellOutboundOptions, echTLSEnabled bool) error {
+	if options.Preconnect < 0 || options.Preconnect > 4 {
+		return E.New("snell: preconnect must be between 0 and 4")
+	}
+	if options.Preconnect == 0 {
+		return nil
+	}
+	if options.Version != 4 || !echTLSEnabled || !options.Reuse {
+		return E.New("snell: preconnect requires version 4, ECH-TLS, and reuse")
 	}
 	return nil
 }
@@ -190,9 +235,65 @@ func (h *Outbound) ListenPacket(ctx context.Context, destination M.Socksaddr) (n
 }
 
 func (h *Outbound) InterfaceUpdated(ctx context.Context) {
+	h.lifecycleAccess.Lock()
+	defer h.lifecycleAccess.Unlock()
+	h.stopPreconnectLocked()
 	h.client.Reset()
+	if h.started && !h.closed {
+		h.startPreconnectLocked()
+	}
 }
 
 func (h *Outbound) Close() error {
+	h.lifecycleAccess.Lock()
+	defer h.lifecycleAccess.Unlock()
+	h.closed = true
+	h.stopPreconnectLocked()
 	return h.client.Close()
+}
+
+func (h *Outbound) Start(stage adapter.StartStage) error {
+	if stage != adapter.StartStateStarted {
+		return nil
+	}
+	h.lifecycleAccess.Lock()
+	defer h.lifecycleAccess.Unlock()
+	if h.started || h.closed {
+		return nil
+	}
+	h.started = true
+	h.startPreconnectLocked()
+	return nil
+}
+
+func (h *Outbound) startPreconnectLocked() {
+	if h.preconnect == 0 {
+		return
+	}
+	client, loaded := h.client.(snellPreconnectClient)
+	if !loaded {
+		return
+	}
+	ctx, cancel := context.WithCancel(h.ctx)
+	done := make(chan struct{})
+	h.preconnectCancel = cancel
+	h.preconnectDone = done
+	go func() {
+		defer close(done)
+		preconnectCtx, timeoutCancel := context.WithTimeout(ctx, 10*time.Second)
+		defer timeoutCancel()
+		if err := client.Preconnect(preconnectCtx, h.preconnect); err != nil && ctx.Err() == nil {
+			h.logger.WarnContext(ctx, "Snell preconnect failed: ", err)
+		}
+	}()
+}
+
+func (h *Outbound) stopPreconnectLocked() {
+	if h.preconnectCancel == nil {
+		return
+	}
+	h.preconnectCancel()
+	<-h.preconnectDone
+	h.preconnectCancel = nil
+	h.preconnectDone = nil
 }

@@ -39,6 +39,7 @@ type UTLSClientConfig struct {
 	recordFragment        bool
 	spoof                 string
 	spoofMethod           tlsspoof.Method
+	snellECH              bool
 }
 
 func (c *UTLSClientConfig) ServerName() string {
@@ -90,7 +91,13 @@ func (c *UTLSClientConfig) Client(conn net.Conn) (Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &utlsALPNWrapper{utlsConnWrapper{utls.UClient(conn, c.config.Clone(), c.id)}, c.config.NextProtos}, nil
+	uConfig := c.config.Clone()
+	uConn := utls.UClient(conn, uConfig, c.id)
+	return &utlsALPNWrapper{
+		utlsConnWrapper: utlsConnWrapper{uConn},
+		nextProtocols:   c.config.NextProtos,
+		snellECH:        c.snellECH,
+	}, nil
 }
 
 func (c *UTLSClientConfig) SetSessionIDGenerator(generator func(clientHello []byte, sessionID []byte) error) {
@@ -111,6 +118,7 @@ func (c *UTLSClientConfig) Clone() Config {
 		recordFragment:        c.recordFragment,
 		spoof:                 c.spoof,
 		spoofMethod:           c.spoofMethod,
+		snellECH:              c.snellECH,
 	}
 	cloned.SetServerName(cloned.serverName)
 	return cloned
@@ -122,6 +130,13 @@ func (c *UTLSClientConfig) ECHConfigList() []byte {
 
 func (c *UTLSClientConfig) SetECHConfigList(EncryptedClientHelloConfigList []byte) {
 	c.config.EncryptedClientHelloConfigList = EncryptedClientHelloConfigList
+}
+
+func (c *UTLSClientConfig) configureSnellECH() {
+	c.config.ClientSessionCache = utls.NewLRUClientSessionCache(SnellECHSessionCacheCapacity)
+	c.config.Renegotiation = utls.RenegotiateNever
+	c.config.OmitEmptyPsk = true
+	c.snellECH = true
 }
 
 type utlsConnWrapper struct {
@@ -144,7 +159,13 @@ func (c *utlsConnWrapper) ConnectionState() tls.ConnectionState {
 		SignedCertificateTimestamps: state.SignedCertificateTimestamps,
 		OCSPResponse:                state.OCSPResponse,
 		TLSUnique:                   state.TLSUnique,
+		ECHAccepted:                 state.ECHAccepted,
 	}
+}
+
+func (c *utlsConnWrapper) ExportKeyingMaterial(label string, context []byte, length int) ([]byte, error) {
+	state := c.Conn.ConnectionState()
+	return state.ExportKeyingMaterial(label, context, length)
 }
 
 func (c *utlsConnWrapper) Upstream() any {
@@ -162,23 +183,60 @@ func (c *utlsConnWrapper) WriterReplaceable() bool {
 type utlsALPNWrapper struct {
 	utlsConnWrapper
 	nextProtocols []string
+	snellECH      bool
 }
 
 func (c *utlsALPNWrapper) HandshakeContext(ctx context.Context) error {
+	if c.snellECH {
+		err := c.BuildHandshakeState()
+		if err != nil {
+			return err
+		}
+		foundALPN := false
+		extensions := c.Extensions[:0]
+		for _, extension := range c.Extensions {
+			if alpnExtension, isALPN := extension.(*utls.ALPNExtension); isALPN {
+				foundALPN = true
+				if len(c.nextProtocols) == 0 {
+					continue
+				}
+				alpnExtension.AlpnProtocols = c.nextProtocols
+			}
+			if renegotiationExtension, isRenegotiation := extension.(*utls.RenegotiationInfoExtension); isRenegotiation {
+				renegotiationExtension.Renegotiation = utls.RenegotiateNever
+			}
+			extensions = append(extensions, extension)
+		}
+		if len(c.nextProtocols) > 0 && !foundALPN {
+			extensions = append(extensions, &utls.ALPNExtension{AlpnProtocols: c.nextProtocols})
+		}
+		c.Extensions = extensions
+		if err = c.BuildHandshakeState(); err != nil {
+			return err
+		}
+		return c.UConn.HandshakeContext(ctx)
+	}
 	if len(c.nextProtocols) > 0 {
 		err := c.BuildHandshakeState()
 		if err != nil {
 			return err
 		}
+		foundALPN := false
+		extensions := c.Extensions[:0]
 		for _, extension := range c.Extensions {
 			if alpnExtension, isALPN := extension.(*utls.ALPNExtension); isALPN {
+				foundALPN = true
 				alpnExtension.AlpnProtocols = c.nextProtocols
-				err = c.BuildHandshakeState()
-				if err != nil {
-					return err
-				}
-				break
 			}
+			extensions = append(extensions, extension)
+		}
+		if len(c.nextProtocols) > 0 && !foundALPN {
+			extensions = append(extensions, &utls.ALPNExtension{AlpnProtocols: c.nextProtocols})
+		}
+		c.Extensions = extensions
+		err = c.BuildHandshakeState()
+		if err != nil {
+			return err
 		}
 	}
 	return c.UConn.HandshakeContext(ctx)
