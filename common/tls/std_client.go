@@ -111,6 +111,11 @@ func (c *STDClientConfig) SetECHConfigList(EncryptedClientHelloConfigList []byte
 	c.config.EncryptedClientHelloConfigList = EncryptedClientHelloConfigList
 }
 
+func (c *STDClientConfig) configureSnellECH() {
+	c.config.ClientSessionCache = tls.NewLRUClientSessionCache(SnellECHSessionCacheCapacity)
+	c.config.Renegotiation = tls.RenegotiateNever
+}
+
 func NewSTDClient(ctx context.Context, logger logger.ContextLogger, serverAddress string, options option.OutboundTLSOptions) (Config, error) {
 	return newSTDClient(ctx, logger, serverAddress, options, false)
 }

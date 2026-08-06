@@ -23,31 +23,38 @@ import (
 )
 
 func TestSnellECHTLSRaw(t *testing.T) {
+	testSnellECHTLSRaw(t, "", false)
+}
+
+func testSnellECHTLSRaw(t *testing.T, alpn string, withUTLS bool) {
 	const (
 		psk        = "snell-ech-tls-test-password"
 		serverName = "snell.example.org"
 		publicName = "public.example.org"
-		alpn       = "h2"
 	)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	echConfig, echKey, err := boxTLS.ECHKeygenDefault(publicName)
 	require.NoError(t, err)
-	serverTLS, err := boxTLS.NewServer(ctx, logger.NOP(), option.InboundTLSOptions{
+	serverTLSOptions := option.InboundTLSOptions{
 		Enabled:    true,
 		ServerName: serverName,
 		Insecure:   true,
-		ALPN:       []string{alpn},
 		ECH: &option.InboundECHOptions{
 			Enabled: true,
 			Key:     []string{echKey},
 		},
-	})
+	}
+	if alpn != "" {
+		serverTLSOptions.ALPN = []string{alpn}
+	}
+	serverTLS, err := boxTLS.NewServer(ctx, logger.NOP(), serverTLSOptions)
 	require.NoError(t, err)
 
 	service, err := snellv5.NewService(snellv5.ServiceOptions{
-		PSK:     []byte(psk),
-		Handler: echTLSEchoHandler{},
+		PSK:      []byte(psk),
+		Identity: true,
+		Handler:  echTLSEchoHandler{},
 	})
 	require.NoError(t, err)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -57,7 +64,7 @@ func TestSnellECHTLSRaw(t *testing.T) {
 		listener.Close()
 		serverTLS.Close()
 	})
-	serverStates := make(chan boxTLS.ConnectionState, 2)
+	serverStates := make(chan echTLSObservation, 2)
 	serverErrors := make(chan error, 2)
 	go func() {
 		for {
@@ -77,7 +84,18 @@ func TestSnellECHTLSRaw(t *testing.T) {
 					serverErrors <- err
 					return
 				}
-				serverStates <- tlsConn.ConnectionState()
+				if err = validateECHTLSConnection(tlsConn, serverTLSOptions.ALPN); err != nil {
+					tlsConn.Close()
+					serverErrors <- err
+					return
+				}
+				exporter, exportErr := snellprotocol.ExportIdentityKeyingMaterial(tlsConn)
+				if exportErr != nil {
+					tlsConn.Close()
+					serverErrors <- exportErr
+					return
+				}
+				serverStates <- echTLSObservation{state: tlsConn.ConnectionState(), exporter: exporter}
 				err = service.NewConnection(ctx, tlsConn, M.SocksaddrFromNet(rawConn.RemoteAddr()), nil)
 				if err != nil {
 					tlsConn.Close()
@@ -87,35 +105,47 @@ func TestSnellECHTLSRaw(t *testing.T) {
 		}
 	}()
 
-	clientTLS, err := boxTLS.NewClient(ctx, logger.NOP(), serverName, option.OutboundTLSOptions{
+	clientTLSOptions := option.OutboundTLSOptions{
 		Enabled:    true,
 		ServerName: serverName,
 		Insecure:   true,
-		ALPN:       []string{alpn},
 		ECH: &option.OutboundECHOptions{
 			Enabled: true,
 			Config:  []string{echConfig},
 		},
-	})
+	}
+	if alpn != "" {
+		clientTLSOptions.ALPN = []string{alpn}
+	}
+	if withUTLS {
+		clientTLSOptions.UTLS = &option.OutboundUTLSOptions{Enabled: true, Fingerprint: "chrome"}
+	}
+	clientTLS, err := boxTLS.NewClient(ctx, logger.NOP(), serverName, clientTLSOptions)
 	require.NoError(t, err)
+	require.NoError(t, boxTLS.ConfigureSnellECHClient(clientTLS))
 	serverAddr := M.SocksaddrFromNet(listener.Addr())
-	rawTLSDialer := boxTLS.NewDialer(N.SystemDialer, clientTLS)
+	clientStates := make(chan echTLSObservation, 2)
+	rawTLSDialer := &recordingECHTLSDialer{
+		Dialer:       &echTLSDialer{Dialer: boxTLS.NewDialer(N.SystemDialer, clientTLS), alpn: []string(clientTLSOptions.ALPN)},
+		observations: clientStates,
+	}
 
 	client, err := snellv4.NewClient(snellv4.ClientOptions{
-		PSK:    []byte(psk),
-		Reuse:  true,
-		Dialer: rawTLSDialer,
-		Server: serverAddr,
+		PSK:      []byte(psk),
+		Identity: snellprotocol.IdentityV2,
+		Reuse:    true,
+		Dialer:   rawTLSDialer,
+		Server:   serverAddr,
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
+	require.NoError(t, client.Preconnect(ctx, 1))
+	assertSnellECHTLSState(t, clientStates, serverStates, serverErrors, alpn, false)
 
 	for index, payload := range [][]byte{[]byte("first reused stream"), []byte("second reused stream")} {
 		conn, err := client.DialContext(ctx, M.ParseSocksaddr("destination.example:443"))
 		require.NoError(t, err)
-		if index == 0 {
-			assertSnellECHTLSState(t, serverStates, serverErrors, alpn)
-		}
+		_ = index
 		_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
 		_, err = conn.Write(payload)
 		require.NoError(t, err)
@@ -130,7 +160,7 @@ func TestSnellECHTLSRaw(t *testing.T) {
 	require.NoError(t, err)
 	packetConn, err := client.DialPacketConn(rawPacketConn)
 	require.NoError(t, err)
-	assertSnellECHTLSState(t, serverStates, serverErrors, alpn)
+	assertSnellECHTLSState(t, clientStates, serverStates, serverErrors, alpn, !withUTLS)
 	t.Cleanup(func() { packetConn.Close() })
 	_ = rawPacketConn.SetDeadline(time.Now().Add(10 * time.Second))
 	packetPayload := make([]byte, 1200)
@@ -150,12 +180,49 @@ func TestSnellECHTLSRaw(t *testing.T) {
 	responseBuffer.Release()
 }
 
-func assertSnellECHTLSState(t *testing.T, states <-chan boxTLS.ConnectionState, serverErrors <-chan error, alpn string) {
+type echTLSObservation struct {
+	state    boxTLS.ConnectionState
+	exporter []byte
+}
+
+type recordingECHTLSDialer struct {
+	N.Dialer
+	observations chan<- echTLSObservation
+}
+
+func (d *recordingECHTLSDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+	conn, err := d.Dialer.DialContext(ctx, network, destination)
+	if err != nil {
+		return nil, err
+	}
+	exporter, err := snellprotocol.ExportIdentityKeyingMaterial(conn)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	d.observations <- echTLSObservation{state: conn.(echTLSConnection).ConnectionState(), exporter: exporter}
+	return conn, nil
+}
+
+func assertSnellECHTLSState(t *testing.T, clientStates <-chan echTLSObservation, serverStates <-chan echTLSObservation, serverErrors <-chan error, alpn string, resumed bool) {
 	t.Helper()
+	var clientObservation echTLSObservation
 	select {
-	case state := <-states:
-		require.True(t, state.ECHAccepted)
-		require.Equal(t, alpn, state.NegotiatedProtocol)
+	case clientObservation = <-clientStates:
+	case err := <-serverErrors:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for client ECH-TLS handshake")
+	}
+	select {
+	case serverObservation := <-serverStates:
+		require.True(t, clientObservation.state.ECHAccepted)
+		require.True(t, serverObservation.state.ECHAccepted)
+		require.Equal(t, resumed, clientObservation.state.DidResume)
+		require.Equal(t, resumed, serverObservation.state.DidResume)
+		require.Equal(t, alpn, clientObservation.state.NegotiatedProtocol)
+		require.Equal(t, alpn, serverObservation.state.NegotiatedProtocol)
+		require.Equal(t, clientObservation.exporter, serverObservation.exporter)
 	case err := <-serverErrors:
 		require.NoError(t, err)
 	case <-time.After(10 * time.Second):

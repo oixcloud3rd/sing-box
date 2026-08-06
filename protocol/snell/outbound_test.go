@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing/common"
 
 	"github.com/stretchr/testify/require"
 )
@@ -100,14 +101,35 @@ func TestValidateIdentityOptions(t *testing.T) {
 	require.NoError(t, validateIdentityOptions(option.SnellOutboundOptions{
 		Version: 4,
 		AbstractSnellOutboundOptions: option.AbstractSnellOutboundOptions{
-			Identity: true,
+			Identity: common.Ptr(1),
 		},
 	}))
+	v2Options := newECHTLSOptions()
+	v2Options.Identity = common.Ptr(2)
+	require.NoError(t, validateIdentityOptions(v2Options))
 	require.NoError(t, validateIdentityOptions(option.SnellOutboundOptions{Version: 6}))
 	require.ErrorContains(t, validateIdentityOptions(option.SnellOutboundOptions{
 		Version: 6,
 		AbstractSnellOutboundOptions: option.AbstractSnellOutboundOptions{
-			Identity: true,
+			Identity: common.Ptr(1),
 		},
 	}), "requires version 4")
+	require.ErrorContains(t, validateIdentityOptions(option.SnellOutboundOptions{Version: 4, AbstractSnellOutboundOptions: option.AbstractSnellOutboundOptions{Identity: common.Ptr(0)}}), "must be 1 or 2")
+	require.ErrorContains(t, validateIdentityOptions(option.SnellOutboundOptions{Version: 4, AbstractSnellOutboundOptions: option.AbstractSnellOutboundOptions{Identity: common.Ptr(3)}}), "must be 1 or 2")
+	require.ErrorContains(t, validateIdentityOptions(option.SnellOutboundOptions{Version: 4, AbstractSnellOutboundOptions: option.AbstractSnellOutboundOptions{Identity: common.Ptr(2)}}), "requires ECH-TLS")
+}
+
+func TestValidatePreconnectOptions(t *testing.T) {
+	t.Parallel()
+	options := newECHTLSOptions()
+	options.Reuse = true
+	options.Preconnect = 4
+	require.NoError(t, validatePreconnectOptions(options, true))
+	options.Preconnect = 5
+	require.ErrorContains(t, validatePreconnectOptions(options, true), "between 0 and 4")
+	options.Preconnect = 1
+	options.Reuse = false
+	require.ErrorContains(t, validatePreconnectOptions(options, true), "requires version 4, ECH-TLS, and reuse")
+	options.Reuse = true
+	require.ErrorContains(t, validatePreconnectOptions(options, false), "requires version 4, ECH-TLS, and reuse")
 }
