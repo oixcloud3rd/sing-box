@@ -16,6 +16,10 @@ type KTLSClientConfig struct {
 	kernelTx, kernelRx bool
 }
 
+func (w *KTLSClientConfig) configureSnellECH() {
+	w.Config.(snellECHClientConfig).configureSnellECH()
+}
+
 func (w *KTLSClientConfig) ClientHandshake(ctx context.Context, conn net.Conn) (aTLS.Conn, error) {
 	tlsConn, err := aTLS.ClientHandshake(ctx, conn, w.Config)
 	if err != nil {

@@ -188,6 +188,10 @@ func (s *ECHClientConfig) Clone() Config {
 	}
 }
 
+func (s *ECHClientConfig) configureSnellECH() {
+	s.ECHCapableConfig.(snellECHClientConfig).configureSnellECH()
+}
+
 func UnmarshalECHKeys(raw []byte) ([]tls.EncryptedClientHelloKey, error) {
 	var keys []tls.EncryptedClientHelloKey
 	rawString := cryptobyte.String(raw)
