@@ -16,8 +16,9 @@ icon: material/new-box
   "version": 4,
   "psk": "password",
   "userkey": "",
-  "identity": false,
+  "identity": 0,
   "reuse": false,
+  "preconnect": 0,
   "network": "tcp",
   "obfs_mode": "",
   "obfs_host": "",
@@ -90,15 +91,21 @@ Snell 协议版本，`4` `6` 之一。
 
 ==仅版本 4==
 
-启用 oixCloud 服务器使用的非标准 Snell 身份标头。
+Snell Identity 版本。省略时关闭，`1` 发送 `DLSNID01` Identity，
+`2` 发送使用 TLS exporter 和 Snell salt 认证的 `DLSNID02` Identity。
 
-身份值为 `BLAKE3-512(psk)` 的前 16 字节。启用后，会在 Snell 初始 salt 后插入
-`DLSNID01` 和身份值。此选项默认关闭；连接使用 oixCloud 专有 Snell ECH-TLS 扩展的服务器时，
-必须由用户显式启用。
+Identity v1 是 `BLAKE3-512(psk)` 的前 16 字节。Identity v2 要求使用 ECH-TLS 且握手实际接受
+ECH；它不绑定特定 ALPN，也可以与 `tls.insecure: true` 一起使用。
 
 #### reuse
 
 启用连接复用（Snell v2 `CONNECT` 命令）。
+
+#### preconnect
+
+后台预先建立的可复用连接数，范围为 `0` 到 `4`，默认为 `0`（关闭）。
+
+大于 `0` 时要求 Snell v4、ECH-TLS 和 `reuse: true`。预连接失败只记录警告，不阻止出站启动。
 
 #### network
 
@@ -130,9 +137,11 @@ HTTP 混淆模式，`none` `http` 之一。
 
 TLS 配置，参阅 [TLS](/zh/configuration/shared/tls/)。
 
-用于 oixCloud 专有 Snell ECH-TLS 扩展时，必须启用 TLS，并将 `ech.enabled` 设为 `true`。
-TLS 连接直接承载 raw Snell v4，不使用 V2Ray 传输层，且不能与 `obfs_mode` 组合使用。
-请根据服务端配置 `alpn`；当前 oixCloud 部署使用 `h2`。
+使用 Snell ECH-TLS 时，必须启用 TLS，并将 `ech.enabled` 设为 `true`。TLS 连接直接承载
+raw Snell v4，不能与 `obfs_mode` 组合使用，且服务端必须实际接受 ECH。
+
+`alpn` 默认为空；显式配置后，协商结果必须属于配置列表。可以显式使用 `snell-ech/1`，
+也可以使用自定义值。
 
 示例：
 
@@ -144,12 +153,13 @@ TLS 连接直接承载 raw Snell v4，不使用 V2Ray 传输层，且不能与 `
   "server_port": 443,
   "version": 4,
   "psk": "password",
-  "identity": true,
+  "identity": 2,
   "reuse": true,
+  "preconnect": 2,
   "tls": {
     "enabled": true,
     "server_name": "public.example.com",
-    "alpn": ["h2"],
+    "alpn": ["snell-ech/1"],
     "ech": {
       "enabled": true,
       "config": [
