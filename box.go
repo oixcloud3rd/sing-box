@@ -162,6 +162,9 @@ func New(options Options) (*Box, error) {
 	if experimentalOptions.V2RayAPI != nil && experimentalOptions.V2RayAPI.Listen != "" {
 		needV2RayAPI = true
 	}
+	if experimentalOptions.UnifiedDelay != nil && experimentalOptions.UnifiedDelay.Enabled {
+		ctx = urltest.ContextWithIsUnifiedDelay(ctx)
+	}
 	needAPIService := common.Any(options.Services, func(it option.Service) bool {
 		return it.Type == C.TypeAPI
 	})

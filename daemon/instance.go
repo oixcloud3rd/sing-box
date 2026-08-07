@@ -114,11 +114,6 @@ func (s *StartedService) newInstance(ctx context.Context, profileContent string,
 	}
 	urlTestHistoryStorage := urltest.NewHistoryStorage()
 	ctx = service.ContextWithPtr(ctx, urlTestHistoryStorage)
-	i := &Instance{
-		ctx:                   ctx,
-		cancel:                cancel,
-		urlTestHistoryStorage: urlTestHistoryStorage,
-	}
 	boxInstance, err := box.New(box.Options{
 		Context:           ctx,
 		Options:           options,
@@ -127,6 +122,15 @@ func (s *StartedService) newInstance(ctx context.Context, profileContent string,
 	if err != nil {
 		cancel()
 		return nil, err
+	}
+	experimentalOptions := common.PtrValueOrDefault(options.Experimental)
+	if experimentalOptions.UnifiedDelay != nil && experimentalOptions.UnifiedDelay.Enabled {
+		ctx = urltest.ContextWithIsUnifiedDelay(ctx)
+	}
+	i := &Instance{
+		ctx:                   ctx,
+		cancel:                cancel,
+		urlTestHistoryStorage: urlTestHistoryStorage,
 	}
 	i.instance = boxInstance
 	i.connectionManager = service.FromContext[adapter.ConnectionManager](ctx)
