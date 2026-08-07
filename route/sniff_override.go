@@ -7,6 +7,7 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	C "github.com/sagernet/sing-box/constant"
+	"github.com/sagernet/sing-box/option"
 	R "github.com/sagernet/sing-box/route/rule"
 	"github.com/sagernet/sing/common"
 	M "github.com/sagernet/sing/common/metadata"
@@ -25,6 +26,32 @@ type sniffOverrideEvaluator struct {
 	positive *freelru.Cache[string, struct{}]
 	negative *freelru.Cache[string, struct{}]
 	group    singleflight.Group
+}
+
+func newSniffOverrideEvaluatorIfNeeded(rules []option.Rule) *sniffOverrideEvaluator {
+	if !hasSniffOverrideDNSEvaluate(rules) {
+		return nil
+	}
+	return newSniffOverrideEvaluator()
+}
+
+func hasSniffOverrideDNSEvaluate(rules []option.Rule) bool {
+	for _, rule := range rules {
+		var action option.RuleAction
+		switch rule.Type {
+		case "", C.RuleTypeDefault:
+			action = rule.DefaultOptions.RuleAction
+		case C.RuleTypeLogical:
+			action = rule.LogicalOptions.RuleAction
+			if hasSniffOverrideDNSEvaluate(rule.LogicalOptions.Rules) {
+				return true
+			}
+		}
+		if action.Action == C.RuleActionTypeSniff && action.SniffOptions.OverrideDestination == C.SniffOverrideDestinationDNSEvaluate {
+			return true
+		}
+	}
+	return false
 }
 
 func newSniffOverrideEvaluator() *sniffOverrideEvaluator {
@@ -66,7 +93,7 @@ func (r *Router) applySniffOverride(ctx context.Context, metadata *adapter.Inbou
 		setSniffDestination(metadata)
 		return
 	}
-	if action.OverrideDestination != C.SniffOverrideDestinationDNSEvaluate || r.dns == nil {
+	if action.OverrideDestination != C.SniffOverrideDestinationDNSEvaluate || r.dns == nil || r.sniffOverride == nil {
 		return
 	}
 	domain := normalizeSniffDomain(metadata.Domain)

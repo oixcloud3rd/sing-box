@@ -10,6 +10,7 @@ import (
 	"github.com/sagernet/sing-box/adapter"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
+	"github.com/sagernet/sing-box/option"
 	R "github.com/sagernet/sing-box/route/rule"
 	M "github.com/sagernet/sing/common/metadata"
 
@@ -53,6 +54,83 @@ func newSniffOverrideTestRouter(dnsRouter adapter.DNSRouter) *Router {
 		logger:        log.NewNOPFactory().Logger(),
 		dns:           dnsRouter,
 		sniffOverride: newSniffOverrideEvaluator(),
+	}
+}
+
+func TestNewSniffOverrideEvaluatorIfNeeded(t *testing.T) {
+	t.Parallel()
+
+	dnsEvaluateAction := option.RuleAction{
+		Action: C.RuleActionTypeSniff,
+		SniffOptions: option.RouteActionSniff{
+			OverrideDestination: C.SniffOverrideDestinationDNSEvaluate,
+		},
+	}
+	testCases := []struct {
+		name     string
+		rules    []option.Rule
+		expected bool
+	}{
+		{
+			name: "empty",
+		},
+		{
+			name: "always",
+			rules: []option.Rule{{
+				Type: C.RuleTypeDefault,
+				DefaultOptions: option.DefaultRule{RuleAction: option.RuleAction{
+					Action: C.RuleActionTypeSniff,
+					SniffOptions: option.RouteActionSniff{
+						OverrideDestination: C.SniffOverrideDestinationAlways,
+					},
+				}},
+			}},
+		},
+		{
+			name: "default rule",
+			rules: []option.Rule{{
+				Type: C.RuleTypeDefault,
+				DefaultOptions: option.DefaultRule{
+					RuleAction: dnsEvaluateAction,
+				},
+			}},
+			expected: true,
+		},
+		{
+			name: "logical rule",
+			rules: []option.Rule{{
+				Type: C.RuleTypeLogical,
+				LogicalOptions: option.LogicalRule{
+					RuleAction: dnsEvaluateAction,
+				},
+			}},
+			expected: true,
+		},
+		{
+			name: "nested rule",
+			rules: []option.Rule{{
+				Type: C.RuleTypeLogical,
+				LogicalOptions: option.LogicalRule{RawLogicalRule: option.RawLogicalRule{
+					Rules: []option.Rule{{
+						Type: C.RuleTypeDefault,
+						DefaultOptions: option.DefaultRule{
+							RuleAction: dnsEvaluateAction,
+						},
+					}},
+				}},
+			}},
+			expected: true,
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			router := NewRouter(context.Background(), log.NewNOPFactory(), option.RouteOptions{Rules: testCase.rules}, option.DNSOptions{})
+			if testCase.expected {
+				require.NotNil(t, router.sniffOverride)
+			} else {
+				require.Nil(t, router.sniffOverride)
+			}
+		})
 	}
 }
 
