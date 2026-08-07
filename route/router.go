@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
@@ -25,29 +26,31 @@ import (
 var _ adapter.Router = (*Router)(nil)
 
 type Router struct {
-	ctx               context.Context
-	logger            log.ContextLogger
-	inbound           adapter.InboundManager
-	outbound          adapter.OutboundManager
-	dns               adapter.DNSRouter
-	dnsTransport      adapter.DNSTransportManager
-	connection        adapter.ConnectionManager
-	network           adapter.NetworkManager
-	httpClientManager adapter.HTTPClientManager
-	rules             []adapter.Rule
-	needFindProcess   bool
-	needFindNeighbor  bool
-	leaseFiles        []string
-	ruleSets          []adapter.RuleSet
-	ruleSetMap        map[string]adapter.RuleSet
-	ruleSetUpdater    *R.RuleSetUpdater
-	processSearcher   process.Searcher
-	processCache      *freelru.Cache[processCacheKey, processCacheEntry]
-	neighborResolver  adapter.NeighborResolver
-	pauseManager      pause.Manager
-	trackers          []adapter.ConnectionTracker
-	platformInterface adapter.PlatformInterface
-	started           bool
+	ctx                         context.Context
+	logger                      log.ContextLogger
+	inbound                     adapter.InboundManager
+	outbound                    adapter.OutboundManager
+	dns                         adapter.DNSRouter
+	dnsTransport                adapter.DNSTransportManager
+	connection                  adapter.ConnectionManager
+	network                     adapter.NetworkManager
+	httpClientManager           adapter.HTTPClientManager
+	rules                       []adapter.Rule
+	needFindProcess             bool
+	needFindNeighbor            bool
+	leaseFiles                  []string
+	ruleSets                    []adapter.RuleSet
+	ruleSetMap                  map[string]adapter.RuleSet
+	ruleSetUpdater              *R.RuleSetUpdater
+	processSearcher             process.Searcher
+	processCache                *freelru.Cache[processCacheKey, processCacheEntry]
+	neighborResolver            adapter.NeighborResolver
+	pauseManager                pause.Manager
+	trackers                    []adapter.ConnectionTracker
+	platformInterface           adapter.PlatformInterface
+	domainOverrideEvaluator     *domainOverrideEvaluator
+	domainOverrideEvaluatorOnce sync.Once
+	started                     bool
 }
 
 func NewRouter(ctx context.Context, logFactory log.Factory, options option.RouteOptions, dnsOptions option.DNSOptions) *Router {

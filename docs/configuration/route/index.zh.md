@@ -78,6 +78,8 @@ icon: material/alert-decagram
 
 默认出站标签。如果为空，将使用第一个可用于对应协议的出站。
 
+使用非最终 [`route-options`](./rule_action/#route-options) 动作为使用默认出站的连接配置路由选项。
+
 #### auto_detect_interface
 
 !!! quote ""

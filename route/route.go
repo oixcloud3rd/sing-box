@@ -159,6 +159,7 @@ func (r *Router) routeConnection(ctx context.Context, conn net.Conn, metadata ad
 		}
 		selectedOutbound = defaultOutbound
 	}
+	r.applyOverrideAddressWithDomain(ctx, &metadata)
 
 	for _, buffer := range buffers {
 		conn = bufio.NewCachedConn(conn, buffer)
@@ -287,6 +288,7 @@ func (r *Router) routePacketConnection(ctx context.Context, conn N.PacketConn, m
 		}
 		selectedOutbound = defaultOutbound
 	}
+	r.applyOverrideAddressWithDomain(ctx, &metadata)
 	for _, buffer := range packetBuffers {
 		conn = bufio.NewCachedPacketConn(conn, buffer.Buffer, buffer.Destination)
 		N.PutPacketBuffer(buffer)
@@ -333,7 +335,10 @@ func (r *Router) PreMatch(metadata adapter.InboundContext, firstPacket []byte) a
 			if metadata.Network != N.NetworkUDP || len(firstPacket) == 0 {
 				return continueResult
 			}
-			if sniff.Skip(&metadata) || metadata.Protocol != "" {
+			if sniff.Skip(&metadata) {
+				continue
+			}
+			if metadata.Protocol != "" {
 				continue
 			}
 			if len(action.PacketSniffers) == 0 && len(action.StreamSniffers) > 0 {
@@ -355,13 +360,6 @@ func (r *Router) PreMatch(metadata adapter.InboundContext, firstPacket []byte) a
 				}
 				continue
 			}
-			//goland:noinspection GoDeprecation
-			if action.OverrideDestination && M.IsDomainName(metadata.Domain) {
-				metadata.Destination = M.Socksaddr{
-					Fqdn: metadata.Domain,
-					Port: metadata.Destination.Port,
-				}
-			}
 			if metadata.Domain != "" && metadata.Client != "" {
 				r.logger.DebugContext(ctx, "sniffed packet protocol: ", metadata.Protocol, ", domain: ", metadata.Domain, ", client: ", metadata.Client)
 			} else if metadata.Domain != "" {
@@ -375,9 +373,11 @@ func (r *Router) PreMatch(metadata adapter.InboundContext, firstPacket []byte) a
 			applyRouteOptionsOverride(&metadata, action)
 		case *R.RuleActionRoute:
 			applyRouteOptionsOverride(&metadata, &action.RuleActionRouteOptions)
+			r.applyOverrideAddressWithDomain(ctx, &metadata)
 			return r.preMatchFlow(ctx, &metadata, packetDestination, currentRule, action.Outbound)
 		case *R.RuleActionBypass:
 			applyRouteOptionsOverride(&metadata, &action.RuleActionRouteOptions)
+			r.applyOverrideAddressWithDomain(ctx, &metadata)
 			if action.Outbound == "" {
 				if metadata.Destination.IsDomain() || metadata.Destination != packetDestination {
 					return continueResult
@@ -406,11 +406,16 @@ func (r *Router) PreMatch(metadata adapter.InboundContext, firstPacket []byte) a
 			return continueResult
 		}
 	}
+	r.applyOverrideAddressWithDomain(ctx, &metadata)
 	return r.preMatchFlow(ctx, &metadata, packetDestination, nil, "")
 }
 
 func applyRouteOptionsOverride(metadata *adapter.InboundContext, routeOptions *R.RuleActionRouteOptions) {
+	if routeOptions.OverrideAddressWithDomain != C.RouteOverrideAddressWithDomainDefault {
+		metadata.RouteOverrideAddressWithDomain = routeOptions.OverrideAddressWithDomain
+	}
 	if routeOptions.OverrideAddress.IsValid() {
+		metadata.RouteOverrideAddressSet = true
 		metadata.Destination = M.Socksaddr{
 			Addr: routeOptions.OverrideAddress.Addr,
 			Port: metadata.Destination.Port,
@@ -731,13 +736,6 @@ func (r *Router) actionSniff(
 		metadata.SnifferNames = action.SnifferNames
 		metadata.SniffError = err
 		if err == nil {
-			//goland:noinspection GoDeprecation
-			if action.OverrideDestination && M.IsDomainName(metadata.Domain) {
-				metadata.Destination = M.Socksaddr{
-					Fqdn: metadata.Domain,
-					Port: metadata.Destination.Port,
-				}
-			}
 			if metadata.Domain != "" && metadata.Client != "" {
 				r.logger.DebugContext(ctx, "sniffed protocol: ", metadata.Protocol, ", domain: ", metadata.Domain, ", client: ", metadata.Client)
 			} else if metadata.Domain != "" {
@@ -855,13 +853,6 @@ func (r *Router) actionSniff(
 		}
 	finally:
 		if err == nil {
-			//goland:noinspection GoDeprecation
-			if action.OverrideDestination && M.IsDomainName(metadata.Domain) {
-				metadata.Destination = M.Socksaddr{
-					Fqdn: metadata.Domain,
-					Port: metadata.Destination.Port,
-				}
-			}
 			if metadata.Domain != "" && metadata.Client != "" {
 				r.logger.DebugContext(ctx, "sniffed packet protocol: ", metadata.Protocol, ", domain: ", metadata.Domain, ", client: ", metadata.Client)
 			} else if metadata.Domain != "" {

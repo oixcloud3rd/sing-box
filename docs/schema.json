@@ -14900,6 +14900,22 @@
               "minimum": 0,
               "maximum": 65535
             },
+            "override_address_with_domain": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "",
+                    "disable",
+                    "always",
+                    "if_resolvable"
+                  ]
+                }
+              ]
+            },
             "network_strategy": {
               "type": "string",
               "enum": [
@@ -14959,6 +14975,22 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 65535
+            },
+            "override_address_with_domain": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "",
+                    "disable",
+                    "always",
+                    "if_resolvable"
+                  ]
+                }
+              ]
             },
             "network_strategy": {
               "type": "string",
@@ -15132,6 +15164,22 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 65535
+            },
+            "override_address_with_domain": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "",
+                    "disable",
+                    "always",
+                    "if_resolvable"
+                  ]
+                }
+              ]
             },
             "network_strategy": {
               "type": "string",

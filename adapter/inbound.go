@@ -66,10 +66,16 @@ type InboundContext struct {
 	// cache
 
 	// Deprecated: implement in rule action
-	InboundDetour             string
-	LastInbound               string
-	OriginDestination         M.Socksaddr
-	RouteOriginalDestination  M.Socksaddr
+	InboundDetour            string
+	LastInbound              string
+	OriginDestination        M.Socksaddr
+	RouteOriginalDestination M.Socksaddr
+
+	// route options
+
+	RouteOverrideAddressWithDomain string
+	RouteOverrideAddressSet        bool
+
 	UDPDisableDomainUnmapping bool
 	UDPConnect                bool
 	UDPTimeout                time.Duration

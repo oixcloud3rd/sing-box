@@ -235,6 +235,9 @@ func (c *Client) beginExchange(ctx context.Context, transport adapter.DNSTranspo
 		operation.cacheKey = cacheKey
 		cond, loaded := c.cacheLock.LoadOrStore(cacheKey, make(chan struct{}))
 		if loaded {
+			if options.CacheOnly {
+				return nil, nil, exchangeDone, ErrNotCached
+			}
 			if !allowWait {
 				return nil, nil, exchangeWait, nil
 			}
@@ -252,7 +255,9 @@ func (c *Client) beginExchange(ctx context.Context, transport adapter.DNSTranspo
 		response, ttl, isStale := c.loadResponse(cacheKey)
 		if response != nil {
 			if isStale && !options.DisableOptimisticCache {
-				c.backgroundRefreshDNS(transport, cacheKey, message.Copy(), options, responseChecker)
+				if !options.CacheOnly {
+					c.backgroundRefreshDNS(transport, cacheKey, message.Copy(), options, responseChecker)
+				}
 				logOptimisticResponse(c.logger, ctx, response)
 				response.Id = message.Id
 				operation.release()
@@ -264,6 +269,10 @@ func (c *Client) beginExchange(ctx context.Context, transport adapter.DNSTranspo
 				return nil, response, exchangeDone, nil
 			}
 		}
+	}
+	if options.CacheOnly {
+		operation.release()
+		return nil, nil, exchangeDone, ErrNotCached
 	}
 
 	contextTransport, transportTagLoaded := transportTagFromContext(ctx)
@@ -464,6 +473,9 @@ func (c *Client) lookupToExchange(ctx context.Context, transport adapter.DNSTran
 			return cachedAddresses, err
 		}
 	}
+	if options.CacheOnly {
+		return nil, ErrNotCached
+	}
 	response, err := c.Exchange(ctx, transport, &message, options, responseChecker)
 	if err != nil {
 		return nil, err
@@ -485,7 +497,9 @@ func (c *Client) questionCache(ctx context.Context, transport adapter.DNSTranspo
 		if options.DisableOptimisticCache {
 			return nil, ErrNotCached
 		}
-		c.backgroundRefreshDNS(transport, cacheKey, c.prepareExchangeMessage(message.Copy(), options), options, responseChecker)
+		if !options.CacheOnly {
+			c.backgroundRefreshDNS(transport, cacheKey, c.prepareExchangeMessage(message.Copy(), options), options, responseChecker)
+		}
 		logOptimisticResponse(c.logger, ctx, response)
 	}
 	if response.Rcode != dns.RcodeSuccess {

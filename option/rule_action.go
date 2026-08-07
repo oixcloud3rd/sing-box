@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/netip"
 	"reflect"
+	"strings"
 	"time"
 
 	C "github.com/sagernet/sing-box/constant"
@@ -95,6 +96,28 @@ func (r *RuleAction) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+	var overrideAddressWithDomain *RouteOverrideAddressWithDomain
+	switch r.Action {
+	case C.RuleActionTypeRoute:
+		overrideAddressWithDomain = &r.RouteOptions.OverrideAddressWithDomain
+	case C.RuleActionTypeRouteOptions:
+		overrideAddressWithDomain = &r.RouteOptionsOptions.OverrideAddressWithDomain
+	case C.RuleActionTypeBypass:
+		overrideAddressWithDomain = &r.BypassOptions.OverrideAddressWithDomain
+	}
+	if overrideAddressWithDomain != nil {
+		// Validate the raw value since the merged object decoder accepts an object before reaching the field unmarshaler.
+		var rawOptions struct {
+			OverrideAddressWithDomain json.RawMessage `json:"override_address_with_domain"`
+		}
+		err = json.Unmarshal(data, &rawOptions)
+		if err != nil {
+			return err
+		}
+		if len(rawOptions.OverrideAddressWithDomain) > 0 {
+			return overrideAddressWithDomain.UnmarshalJSON(rawOptions.OverrideAddressWithDomain)
+		}
+	}
 	return nil
 }
 
@@ -177,8 +200,9 @@ type RouteActionOptions struct {
 }
 
 type RawRouteOptionsActionOptions struct {
-	OverrideAddress string `json:"override_address,omitempty"`
-	OverridePort    uint16 `json:"override_port,omitempty"`
+	OverrideAddress           string                         `json:"override_address,omitempty"`
+	OverridePort              uint16                         `json:"override_port,omitempty"`
+	OverrideAddressWithDomain RouteOverrideAddressWithDomain `json:"override_address_with_domain,omitempty"`
 
 	NetworkStrategy *NetworkStrategy `json:"network_strategy,omitempty"`
 	FallbackDelay   uint32           `json:"fallback_delay,omitempty"`
@@ -324,6 +348,48 @@ func (r *RejectActionOptions) UnmarshalJSON(bytes []byte) error {
 type RouteActionSniff struct {
 	Sniffer badoption.Listable[string] `json:"sniffer,omitempty" enum:"tls,http,quic,dns,stun,bittorrent,dtls,ssh,rdp,ntp"`
 	Timeout badoption.Duration         `json:"timeout,omitempty"`
+}
+
+type RouteOverrideAddressWithDomain string
+
+func (o *RouteOverrideAddressWithDomain) UnmarshalJSON(content []byte) error {
+	rawValue := strings.TrimSpace(string(content))
+	switch rawValue {
+	case "false":
+		*o = C.RouteOverrideAddressWithDomainDefault
+		return nil
+	case "true":
+		*o = C.RouteOverrideAddressWithDomainAlways
+		return nil
+	}
+	if len(rawValue) == 0 || rawValue[0] != '"' {
+		return E.New("override address with domain must be a boolean or string")
+	}
+	var mode string
+	if err := json.Unmarshal(content, &mode); err != nil {
+		return err
+	}
+	switch mode {
+	case C.RouteOverrideAddressWithDomainDefault:
+		*o = C.RouteOverrideAddressWithDomainDefault
+	case C.RouteOverrideAddressWithDomainDisable, C.RouteOverrideAddressWithDomainAlways, C.RouteOverrideAddressWithDomainIfResolvable:
+		*o = RouteOverrideAddressWithDomain(mode)
+	default:
+		return E.New("unknown override address with domain mode: ", mode)
+	}
+	return nil
+}
+
+func (o RouteOverrideAddressWithDomain) DescribeSchema(builder schema.Builder) (*schema.Node, error) {
+	return schema.AnyOf(
+		schema.BooleanNode(),
+		schema.StringEnum(
+			C.RouteOverrideAddressWithDomainDefault,
+			C.RouteOverrideAddressWithDomainDisable,
+			C.RouteOverrideAddressWithDomainAlways,
+			C.RouteOverrideAddressWithDomainIfResolvable,
+		),
+	), nil
 }
 
 type RouteActionResolve struct {
