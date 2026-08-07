@@ -48,3 +48,10 @@ const (
 	RuleActionRejectMethodDrop    = "drop"
 	RuleActionRejectMethodReply   = "reply"
 )
+
+const (
+	SniffOverrideDestinationDefault     = ""
+	SniffOverrideDestinationDisabled    = "disabled"
+	SniffOverrideDestinationAlways      = "always"
+	SniffOverrideDestinationDNSEvaluate = "dns_evaluate"
+)

@@ -105,8 +105,9 @@ func NewRuleAction(ctx context.Context, logger logger.ContextLogger, action opti
 		return &RuleActionHijackDNS{}, nil
 	case C.RuleActionTypeSniff:
 		sniffAction := &RuleActionSniff{
-			SnifferNames: action.SniffOptions.Sniffer,
-			Timeout:      time.Duration(action.SniffOptions.Timeout),
+			SnifferNames:        action.SniffOptions.Sniffer,
+			Timeout:             time.Duration(action.SniffOptions.Timeout),
+			OverrideDestination: string(action.SniffOptions.OverrideDestination),
 		}
 		return sniffAction, sniffAction.build()
 	case C.RuleActionTypeResolve:
@@ -498,12 +499,11 @@ func (r *RuleActionHijackDNS) String() string {
 }
 
 type RuleActionSniff struct {
-	SnifferNames   []string
-	StreamSniffers []sniff.StreamSniffer
-	PacketSniffers []sniff.PacketSniffer
-	Timeout        time.Duration
-	// Deprecated
-	OverrideDestination bool
+	SnifferNames        []string
+	StreamSniffers      []sniff.StreamSniffer
+	PacketSniffers      []sniff.PacketSniffer
+	Timeout             time.Duration
+	OverrideDestination string
 }
 
 func (r *RuleActionSniff) Type() string {
@@ -544,15 +544,20 @@ func (r *RuleActionSniff) build() error {
 }
 
 func (r *RuleActionSniff) String() string {
-	if len(r.SnifferNames) == 0 && r.Timeout == 0 {
-		return "sniff"
-	} else if len(r.SnifferNames) > 0 && r.Timeout == 0 {
-		return F.ToString("sniff(", strings.Join(r.SnifferNames, ","), ")")
-	} else if len(r.SnifferNames) == 0 && r.Timeout > 0 {
-		return F.ToString("sniff(", r.Timeout.String(), ")")
-	} else {
-		return F.ToString("sniff(", strings.Join(r.SnifferNames, ","), ",", r.Timeout.String(), ")")
+	var options []string
+	if len(r.SnifferNames) > 0 {
+		options = append(options, strings.Join(r.SnifferNames, ","))
 	}
+	if r.Timeout > 0 {
+		options = append(options, r.Timeout.String())
+	}
+	if r.OverrideDestination != C.SniffOverrideDestinationDefault && r.OverrideDestination != C.SniffOverrideDestinationDisabled {
+		options = append(options, "override_destination="+r.OverrideDestination)
+	}
+	if len(options) == 0 {
+		return "sniff"
+	}
+	return F.ToString("sniff(", strings.Join(options, ","), ")")
 }
 
 type RuleActionResolve struct {

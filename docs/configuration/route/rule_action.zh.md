@@ -270,7 +270,8 @@ UDP 连接超时时间。
 {
   "action": "sniff",
   "sniffer": [],
-  "timeout": ""
+  "timeout": "",
+  "override_destination": "disabled"
 }
 ```
 
@@ -291,6 +292,24 @@ UDP 连接超时时间。
 探测超时时间。
 
 默认使用 300ms。
+
+#### override_destination
+
+控制是否使用 HTTP、TLS 或 QUIC 嗅探到的域名覆写连接目标。
+
+可用值：
+
+- `disabled`：不覆写目标，默认值。
+- `always`：嗅探到有效域名时立即覆写目标。
+- `dns_evaluate`：仅当嗅探域名已知存在有效 A 或 AAAA 记录时覆写目标。
+
+为了兼容旧配置，`false` 等同于 `disabled`，`true` 等同于 `always`。
+
+`dns_evaluate` 首先检查 DNS 缓存且不会发起阻塞查询。缓存未命中时，当前连接继续使用原始 IP 目标，
+sing-box 同时通过已配置的 DNS 规则在后台评估该域名；评估成功后的连接可以使用域名。解析结果无需包含
+连接的原始目标 IP。
+
+仅接受 HTTP、TLS 和 QUIC 嗅探到的域名。DNS sniffer 检测到的 DNS 查询名永远不会覆写连接目标。
 
 ### resolve
 

@@ -15258,6 +15258,21 @@
             },
             "timeout": {
               "$ref": "#/$defs/Duration"
+            },
+            "override_destination": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "disabled",
+                    "always",
+                    "dns_evaluate"
+                  ]
+                }
+              ]
             }
           },
           "required": [

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/netip"
 	"reflect"
+	"strings"
 	"time"
 
 	C "github.com/sagernet/sing-box/constant"
@@ -94,6 +95,19 @@ func (r *RuleAction) UnmarshalJSON(data []byte) error {
 	err = badjson.UnmarshallExcluded(data, (*_RuleAction)(r), v)
 	if err != nil {
 		return err
+	}
+	if r.Action == C.RuleActionTypeSniff {
+		// Validate the raw value since the merged object decoder accepts an object before reaching the field unmarshaler.
+		var rawOptions struct {
+			OverrideDestination json.RawMessage `json:"override_destination"`
+		}
+		err = json.Unmarshal(data, &rawOptions)
+		if err != nil {
+			return err
+		}
+		if len(rawOptions.OverrideDestination) > 0 {
+			return r.SniffOptions.OverrideDestination.UnmarshalJSON(rawOptions.OverrideDestination)
+		}
 	}
 	return nil
 }
@@ -322,8 +336,52 @@ func (r *RejectActionOptions) UnmarshalJSON(bytes []byte) error {
 }
 
 type RouteActionSniff struct {
-	Sniffer badoption.Listable[string] `json:"sniffer,omitempty" enum:"tls,http,quic,dns,stun,bittorrent,dtls,ssh,rdp,ntp"`
-	Timeout badoption.Duration         `json:"timeout,omitempty"`
+	Sniffer             badoption.Listable[string] `json:"sniffer,omitempty" enum:"tls,http,quic,dns,stun,bittorrent,dtls,ssh,rdp,ntp"`
+	Timeout             badoption.Duration         `json:"timeout,omitempty"`
+	OverrideDestination SniffOverrideDestination   `json:"override_destination,omitempty"`
+}
+
+type SniffOverrideDestination string
+
+func (o *SniffOverrideDestination) UnmarshalJSON(content []byte) error {
+	rawValue := strings.TrimSpace(string(content))
+	switch rawValue {
+	case "true":
+		*o = C.SniffOverrideDestinationAlways
+		return nil
+	case "false":
+		*o = C.SniffOverrideDestinationDisabled
+		return nil
+	}
+	if len(rawValue) == 0 || rawValue[0] != '"' {
+		return E.New("sniff override destination must be a boolean or string")
+	}
+	var mode string
+	if err := json.Unmarshal(content, &mode); err != nil {
+		return err
+	}
+	switch mode {
+	case C.SniffOverrideDestinationDefault:
+		*o = C.SniffOverrideDestinationDefault
+	case C.SniffOverrideDestinationDisabled:
+		*o = C.SniffOverrideDestinationDisabled
+	case C.SniffOverrideDestinationAlways, C.SniffOverrideDestinationDNSEvaluate:
+		*o = SniffOverrideDestination(mode)
+	default:
+		return E.New("unknown sniff override destination mode: ", mode)
+	}
+	return nil
+}
+
+func (o SniffOverrideDestination) DescribeSchema(builder schema.Builder) (*schema.Node, error) {
+	return schema.AnyOf(
+		schema.BooleanNode(),
+		schema.StringEnum(
+			C.SniffOverrideDestinationDisabled,
+			C.SniffOverrideDestinationAlways,
+			C.SniffOverrideDestinationDNSEvaluate,
+		),
+	), nil
 }
 
 type RouteActionResolve struct {

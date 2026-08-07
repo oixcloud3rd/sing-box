@@ -47,6 +47,7 @@ type Router struct {
 	pauseManager      pause.Manager
 	trackers          []adapter.ConnectionTracker
 	platformInterface adapter.PlatformInterface
+	sniffOverride     *sniffOverrideEvaluator
 	started           bool
 }
 
@@ -68,6 +69,7 @@ func NewRouter(ctx context.Context, logFactory log.Factory, options option.Route
 		leaseFiles:        options.DHCPLeaseFiles,
 		pauseManager:      service.FromContext[pause.Manager](ctx),
 		platformInterface: service.FromContext[adapter.PlatformInterface](ctx),
+		sniffOverride:     newSniffOverrideEvaluator(),
 	}
 }
 

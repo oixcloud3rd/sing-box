@@ -280,7 +280,8 @@ of accepted values and platform notes.
 {
   "action": "sniff",
   "sniffer": [],
-  "timeout": ""
+  "timeout": "",
+  "override_destination": "disabled"
 }
 ```
 
@@ -301,6 +302,26 @@ Available protocol values an be found on in [Protocol Sniff](../sniff/)
 Timeout for sniffing.
 
 `300ms` is used by default.
+
+#### override_destination
+
+Controls whether the connection destination is replaced with a domain detected from HTTP, TLS, or QUIC.
+
+Available values:
+
+- `disabled`: Do not override the destination. This is the default.
+- `always`: Override the destination whenever a valid domain is detected.
+- `dns_evaluate`: Override only after the detected domain is known to have a valid A or AAAA record.
+
+For compatibility, `false` is equivalent to `disabled` and `true` is equivalent to `always`.
+
+`dns_evaluate` checks the DNS cache without sending a blocking query. On a cache miss, the current connection keeps its
+original IP destination while sing-box evaluates the domain in the background through the configured DNS rules. Later
+connections can use the domain after a successful evaluation. The resolved addresses do not need to contain the original
+destination IP.
+
+Only domains detected from HTTP, TLS, and QUIC are accepted. In particular, a DNS query name detected by the DNS sniffer
+never overrides the destination.
 
 ### resolve
 
