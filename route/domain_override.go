@@ -50,10 +50,27 @@ func normalizeOverrideAddressDomain(domain string) string {
 }
 
 func overrideAddressWithDomain(metadata *adapter.InboundContext) {
-	metadata.Destination = M.Socksaddr{
+	destination := M.Socksaddr{
 		Fqdn: metadata.Domain,
 		Port: metadata.Destination.Port,
 	}
+	if destination == metadata.Destination {
+		return
+	}
+	clearDestinationAddresses(metadata)
+	metadata.Destination = destination
+}
+
+func isOverrideAddressWithDomainScopeEnabled(metadata *adapter.InboundContext) bool {
+	var enabled *bool
+	if metadata.Destination.IsIP() {
+		enabled = metadata.RouteOverrideAddressWithDomainScopeIP
+	} else if metadata.Destination.IsDomain() {
+		enabled = metadata.RouteOverrideAddressWithDomainScopeDomain
+	} else {
+		return false
+	}
+	return enabled == nil || *enabled
 }
 
 func (r *Router) applyOverrideAddressWithDomain(ctx context.Context, metadata *adapter.InboundContext) {
@@ -64,7 +81,7 @@ func (r *Router) applyOverrideAddressWithDomain(ctx context.Context, metadata *a
 	if mode != C.RouteOverrideAddressWithDomainAlways && mode != C.RouteOverrideAddressWithDomainIfResolvable {
 		return
 	}
-	if !isOverrideAddressWithDomainProtocol(metadata.Protocol) || !M.IsDomainName(metadata.Domain) {
+	if !isOverrideAddressWithDomainScopeEnabled(metadata) || !isOverrideAddressWithDomainProtocol(metadata.Protocol) || !M.IsDomainName(metadata.Domain) {
 		return
 	}
 	if mode == C.RouteOverrideAddressWithDomainAlways {

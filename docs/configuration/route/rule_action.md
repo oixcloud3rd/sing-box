@@ -9,6 +9,7 @@ icon: material/new-box
 
 !!! quote "Changes in sing-box 1.14.0"
 
+    :material-plus: [resolve.route_only](#route_only)
     :material-plus: [resolve.disable_optimistic_cache](#disable_optimistic_cache)  
     :material-plus: [resolve.timeout](#timeout)  
     :material-plus: [tls_spoof](#tls_spoof)  
@@ -144,7 +145,13 @@ Not available when `method` is set to drop.
   "action": "route-options",
   "override_address": "",
   "override_port": 0,
-  "override_address_with_domain": "",
+  "override_address_with_domain": {
+    "condition": "always",
+    "scope": {
+      "domain": true,
+      "ip": true
+    }
+  },
   "network_strategy": "",
   "fallback_delay": "",
   "udp_disable_domain_unmapping": false,
@@ -172,14 +179,31 @@ Override the connection destination port.
 
 Controls whether the connection destination address is replaced with the domain from route metadata after routing is complete.
 
-Available values:
+Structure:
+
+```json
+{
+  "condition": "always",
+  "scope": {
+    "domain": false,
+    "ip": true
+  }
+}
+```
+
+Available conditions:
 
 - `disable`: Do not replace the destination address, overriding any value inherited from an earlier `route-options` action.
 - `always`: Override the address whenever a valid domain is available from HTTP, TLS, or QUIC protocol detection.
 - `if_resolvable`: Override only after the domain is known to have a valid A or AAAA record.
 
-An empty value leaves the value set by an earlier `route-options` action unchanged. Use `disable` to explicitly clear an
-inherited mode. For compatibility, `false` is equivalent to an empty value and `true` is equivalent to `always`.
+`scope.domain` controls overriding a current domain destination, and `scope.ip` controls overriding a current IP
+destination. Both default to `true`. Each omitted condition or scope field inherits the value set by earlier
+`route-options` actions. Set a scope field explicitly to `true` or `false` to update it independently.
+
+For compatibility, the legacy boolean and string forms are still accepted: `false` and an empty string leave the
+condition unchanged, `true` is equivalent to `always`, and `disable`, `always`, and `if_resolvable` map to the matching
+condition. The legacy forms do not change scope.
 
 `override_address` takes precedence when both options are effective. `override_port` is preserved when the address is
 replaced with a domain.
@@ -334,6 +358,7 @@ Timeout for sniffing.
   "action": "resolve",
   "server": "",
   "strategy": "",
+  "route_only": false,
   "disable_cache": false,
   "disable_optimistic_cache": false,
   "rewrite_ttl": null,
@@ -353,6 +378,16 @@ Specifies DNS server tag to use instead of selecting through DNS routing.
 DNS resolution strategy, available values are: `prefer_ipv4`, `prefer_ipv6`, `ipv4_only`, `ipv6_only`.
 
 `dns.strategy` will be used by default.
+
+#### route_only
+
+!!! question "Since sing-box 1.14.0"
+
+When enabled, resolved IP addresses are only used by subsequent route rules and FakeIP pre-match, and are not passed to the outbound for dialing.
+
+The original domain destination is used for dialing.
+
+Disabled by default.
 
 #### disable_cache
 

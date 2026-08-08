@@ -14318,6 +14318,18 @@
       },
       "additionalProperties": false
     },
+    "RouteOverrideAddressWithDomainScopeOptions": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "boolean"
+        },
+        "ip": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "Rule": {
       "oneOf": [
         {
@@ -14913,6 +14925,23 @@
                     "always",
                     "if_resolvable"
                   ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "condition": {
+                      "type": "string",
+                      "enum": [
+                        "disable",
+                        "always",
+                        "if_resolvable"
+                      ]
+                    },
+                    "scope": {
+                      "$ref": "#/$defs/RouteOverrideAddressWithDomainScopeOptions"
+                    }
+                  },
+                  "additionalProperties": false
                 }
               ]
             },
@@ -14989,6 +15018,23 @@
                     "always",
                     "if_resolvable"
                   ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "condition": {
+                      "type": "string",
+                      "enum": [
+                        "disable",
+                        "always",
+                        "if_resolvable"
+                      ]
+                    },
+                    "scope": {
+                      "$ref": "#/$defs/RouteOverrideAddressWithDomainScopeOptions"
+                    }
+                  },
+                  "additionalProperties": false
                 }
               ]
             },
@@ -15178,6 +15224,23 @@
                     "always",
                     "if_resolvable"
                   ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "condition": {
+                      "type": "string",
+                      "enum": [
+                        "disable",
+                        "always",
+                        "if_resolvable"
+                      ]
+                    },
+                    "scope": {
+                      "$ref": "#/$defs/RouteOverrideAddressWithDomainScopeOptions"
+                    }
+                  },
+                  "additionalProperties": false
                 }
               ]
             },
@@ -15330,6 +15393,9 @@
             },
             "strategy": {
               "$ref": "#/$defs/DomainStrategy"
+            },
+            "route_only": {
+              "type": "boolean"
             },
             "disable_cache": {
               "type": "boolean"

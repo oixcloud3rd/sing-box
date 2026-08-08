@@ -73,8 +73,10 @@ type InboundContext struct {
 
 	// route options
 
-	RouteOverrideAddressWithDomain string
-	RouteOverrideAddressSet        bool
+	RouteOverrideAddressWithDomain            string
+	RouteOverrideAddressWithDomainScopeDomain *bool
+	RouteOverrideAddressWithDomainScopeIP     *bool
+	RouteOverrideAddressSet                   bool
 
 	UDPDisableDomainUnmapping bool
 	UDPConnect                bool
@@ -91,6 +93,7 @@ type InboundContext struct {
 	FallbackDelay       time.Duration
 
 	DestinationAddresses                []netip.Addr
+	DestinationAddressesRouteOnly       bool
 	DNSResponse                         *dns.Msg
 	NamedDNSResponses                   map[string]*dns.Msg
 	DestinationAddressMatchFromResponse bool

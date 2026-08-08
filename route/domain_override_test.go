@@ -59,7 +59,9 @@ func newOverrideAddressWithDomainTestRouter(dnsRouter adapter.DNSRouter) *Router
 
 func overrideAddressWithDomainAction(actionType string, mode string) option.RuleAction {
 	options := option.RawRouteOptionsActionOptions{
-		OverrideAddressWithDomain: option.RouteOverrideAddressWithDomain(mode),
+		OverrideAddressWithDomain: option.RouteOverrideAddressWithDomainOptions{
+			Condition: option.RouteOverrideAddressWithDomainCondition(mode),
+		},
 	}
 	switch actionType {
 	case C.RuleActionTypeRoute:
@@ -140,24 +142,125 @@ func TestOverrideAddressWithDomainAlwaysProtocolScope(t *testing.T) {
 	}
 }
 
+func TestOverrideAddressWithDomainDomainScope(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []string{C.RouteOverrideAddressWithDomainAlways, C.RouteOverrideAddressWithDomainIfResolvable} {
+		dnsRouter := &overrideAddressWithDomainTestDNSRouter{cachedAddresses: []netip.Addr{netip.MustParseAddr("203.0.113.1")}}
+		router := newOverrideAddressWithDomainTestRouter(dnsRouter)
+		metadata := overrideAddressWithDomainTestMetadata(C.ProtocolTLS, mode)
+		metadata.Destination = M.Socksaddr{Fqdn: "origin.example.org", Port: 443}
+		metadata.DestinationAddresses = []netip.Addr{netip.MustParseAddr("198.51.100.2")}
+		metadata.DestinationAddressesRouteOnly = true
+		router.applyOverrideAddressWithDomain(context.Background(), &metadata)
+		require.Equal(t, "www.example.org", metadata.Destination.Fqdn, mode)
+		require.Empty(t, metadata.DestinationAddresses, mode)
+		require.False(t, metadata.DestinationAddressesRouteOnly, mode)
+		if mode == C.RouteOverrideAddressWithDomainIfResolvable {
+			require.Equal(t, int32(1), dnsRouter.cacheCalls.Load(), mode)
+		} else {
+			require.Zero(t, dnsRouter.cacheCalls.Load(), mode)
+		}
+		require.Zero(t, dnsRouter.warmCalls.Load(), mode)
+	}
+
+	domainScopeDisabled := false
+	for _, mode := range []string{C.RouteOverrideAddressWithDomainAlways, C.RouteOverrideAddressWithDomainIfResolvable} {
+		dnsRouter := &overrideAddressWithDomainTestDNSRouter{cachedAddresses: []netip.Addr{netip.MustParseAddr("203.0.113.1")}}
+		router := newOverrideAddressWithDomainTestRouter(dnsRouter)
+		metadata := overrideAddressWithDomainTestMetadata(C.ProtocolTLS, mode)
+		metadata.Destination = M.Socksaddr{Fqdn: "origin.example.org", Port: 443}
+		metadata.RouteOverrideAddressWithDomainScopeDomain = &domainScopeDisabled
+		router.applyOverrideAddressWithDomain(context.Background(), &metadata)
+		require.Equal(t, "origin.example.org", metadata.Destination.Fqdn, mode)
+		require.Zero(t, dnsRouter.cacheCalls.Load(), mode)
+		require.Zero(t, dnsRouter.warmCalls.Load(), mode)
+	}
+}
+
+func TestOverrideAddressWithDomainIPScope(t *testing.T) {
+	t.Parallel()
+
+	ipScopeDisabled := false
+	for _, mode := range []string{C.RouteOverrideAddressWithDomainAlways, C.RouteOverrideAddressWithDomainIfResolvable} {
+		dnsRouter := &overrideAddressWithDomainTestDNSRouter{cachedAddresses: []netip.Addr{netip.MustParseAddr("203.0.113.1")}}
+		router := newOverrideAddressWithDomainTestRouter(dnsRouter)
+		metadata := overrideAddressWithDomainTestMetadata(C.ProtocolTLS, mode)
+		metadata.RouteOverrideAddressWithDomainScopeIP = &ipScopeDisabled
+		router.applyOverrideAddressWithDomain(context.Background(), &metadata)
+		require.True(t, metadata.Destination.IsIP(), mode)
+		require.Zero(t, dnsRouter.cacheCalls.Load(), mode)
+		require.Zero(t, dnsRouter.warmCalls.Load(), mode)
+	}
+}
+
+func TestOverrideAddressWithDomainClearsDestinationAddresses(t *testing.T) {
+	t.Parallel()
+
+	router := newOverrideAddressWithDomainTestRouter(&overrideAddressWithDomainTestDNSRouter{})
+	metadata := overrideAddressWithDomainTestMetadata(C.ProtocolTLS, C.RouteOverrideAddressWithDomainAlways)
+	metadata.DestinationAddresses = []netip.Addr{netip.MustParseAddr("203.0.113.1")}
+	metadata.DestinationAddressesRouteOnly = true
+	router.applyOverrideAddressWithDomain(context.Background(), &metadata)
+	require.Equal(t, "www.example.org", metadata.Destination.Fqdn)
+	require.Empty(t, metadata.DestinationAddresses)
+	require.False(t, metadata.DestinationAddressesRouteOnly)
+}
+
+func TestOverrideAddressWithDomainKeepsDestinationAddressesWhenUnchanged(t *testing.T) {
+	t.Parallel()
+
+	router := newOverrideAddressWithDomainTestRouter(&overrideAddressWithDomainTestDNSRouter{})
+	metadata := overrideAddressWithDomainTestMetadata(C.ProtocolTLS, C.RouteOverrideAddressWithDomainAlways)
+	metadata.Destination = M.Socksaddr{Fqdn: "www.example.org", Port: 443}
+	metadata.DestinationAddresses = []netip.Addr{netip.MustParseAddr("203.0.113.1")}
+	metadata.DestinationAddressesRouteOnly = true
+	router.applyOverrideAddressWithDomain(context.Background(), &metadata)
+	require.Equal(t, "www.example.org", metadata.Destination.Fqdn)
+	require.Equal(t, []netip.Addr{netip.MustParseAddr("203.0.113.1")}, metadata.DestinationAddresses)
+	require.True(t, metadata.DestinationAddressesRouteOnly)
+}
+
 func TestOverrideAddressWithDomainRouteOptions(t *testing.T) {
 	t.Parallel()
 
 	metadata := overrideAddressWithDomainTestMetadata(C.ProtocolTLS, C.RouteOverrideAddressWithDomainDefault)
 	applyRouteOptionsOverride(&metadata, &R.RuleActionRouteOptions{
-		OverrideAddressWithDomain: C.RouteOverrideAddressWithDomainIfResolvable,
+		OverrideAddressWithDomain: R.RuleActionOverrideAddressWithDomain{
+			Condition: C.RouteOverrideAddressWithDomainIfResolvable,
+		},
 	})
 	require.Equal(t, C.RouteOverrideAddressWithDomainIfResolvable, metadata.RouteOverrideAddressWithDomain)
 	applyRouteOptionsOverride(&metadata, &R.RuleActionRouteOptions{})
 	require.Equal(t, C.RouteOverrideAddressWithDomainIfResolvable, metadata.RouteOverrideAddressWithDomain)
+	domainScopeDisabled := false
+	ipScopeDisabled := false
 	applyRouteOptionsOverride(&metadata, &R.RuleActionRouteOptions{
-		OverrideAddressWithDomain: C.RouteOverrideAddressWithDomainAlways,
+		OverrideAddressWithDomain: R.RuleActionOverrideAddressWithDomain{
+			Condition:   C.RouteOverrideAddressWithDomainAlways,
+			ScopeDomain: &domainScopeDisabled,
+		},
 	})
 	require.Equal(t, C.RouteOverrideAddressWithDomainAlways, metadata.RouteOverrideAddressWithDomain)
+	require.Equal(t, &domainScopeDisabled, metadata.RouteOverrideAddressWithDomainScopeDomain)
+	require.Nil(t, metadata.RouteOverrideAddressWithDomainScopeIP)
 	applyRouteOptionsOverride(&metadata, &R.RuleActionRouteOptions{
-		OverrideAddressWithDomain: C.RouteOverrideAddressWithDomainDisable,
+		OverrideAddressWithDomain: R.RuleActionOverrideAddressWithDomain{
+			Condition: C.RouteOverrideAddressWithDomainDisable,
+			ScopeIP:   &ipScopeDisabled,
+		},
 	})
 	require.Equal(t, C.RouteOverrideAddressWithDomainDisable, metadata.RouteOverrideAddressWithDomain)
+	require.Equal(t, &domainScopeDisabled, metadata.RouteOverrideAddressWithDomainScopeDomain)
+	require.Equal(t, &ipScopeDisabled, metadata.RouteOverrideAddressWithDomainScopeIP)
+	domainScopeEnabled := true
+	applyRouteOptionsOverride(&metadata, &R.RuleActionRouteOptions{
+		OverrideAddressWithDomain: R.RuleActionOverrideAddressWithDomain{
+			ScopeDomain: &domainScopeEnabled,
+		},
+	})
+	require.Equal(t, &domainScopeEnabled, metadata.RouteOverrideAddressWithDomainScopeDomain)
+	require.Equal(t, &ipScopeDisabled, metadata.RouteOverrideAddressWithDomainScopeIP)
 	newOverrideAddressWithDomainTestRouter(&overrideAddressWithDomainTestDNSRouter{}).applyOverrideAddressWithDomain(context.Background(), &metadata)
 	require.True(t, metadata.Destination.IsIP())
 }
@@ -167,16 +270,39 @@ func TestOverrideAddressTakesPriorityOverDomain(t *testing.T) {
 
 	router := newOverrideAddressWithDomainTestRouter(&overrideAddressWithDomainTestDNSRouter{})
 	metadata := overrideAddressWithDomainTestMetadata(C.ProtocolTLS, C.RouteOverrideAddressWithDomainDefault)
+	metadata.DestinationAddresses = []netip.Addr{netip.MustParseAddr("198.51.100.2")}
+	metadata.DestinationAddressesRouteOnly = true
 	applyRouteOptionsOverride(&metadata, &R.RuleActionRouteOptions{
 		OverrideAddress: M.Socksaddr{
 			Addr: netip.MustParseAddr("203.0.113.1"),
 		},
-		OverridePort:              9443,
-		OverrideAddressWithDomain: C.RouteOverrideAddressWithDomainAlways,
+		OverridePort: 9443,
+		OverrideAddressWithDomain: R.RuleActionOverrideAddressWithDomain{
+			Condition: C.RouteOverrideAddressWithDomainAlways,
+		},
 	})
 	router.applyOverrideAddressWithDomain(context.Background(), &metadata)
 	require.Equal(t, netip.MustParseAddr("203.0.113.1"), metadata.Destination.Addr)
 	require.Equal(t, uint16(9443), metadata.Destination.Port)
+	require.Empty(t, metadata.DestinationAddresses)
+	require.False(t, metadata.DestinationAddressesRouteOnly)
+}
+
+func TestOverrideAddressKeepsDestinationAddressesWhenAddressIsUnchanged(t *testing.T) {
+	t.Parallel()
+
+	metadata := overrideAddressWithDomainTestMetadata(C.ProtocolTLS, C.RouteOverrideAddressWithDomainAlways)
+	metadata.DestinationAddresses = []netip.Addr{netip.MustParseAddr("198.51.100.2")}
+	metadata.DestinationAddressesRouteOnly = true
+	applyRouteOptionsOverride(&metadata, &R.RuleActionRouteOptions{
+		OverrideAddress: M.Socksaddr{Addr: netip.MustParseAddr("198.51.100.1")},
+		OverridePort:    9443,
+	})
+	require.Equal(t, netip.MustParseAddr("198.51.100.1"), metadata.Destination.Addr)
+	require.Equal(t, uint16(9443), metadata.Destination.Port)
+	require.Equal(t, []netip.Addr{netip.MustParseAddr("198.51.100.2")}, metadata.DestinationAddresses)
+	require.True(t, metadata.DestinationAddressesRouteOnly)
+	require.True(t, metadata.RouteOverrideAddressSet)
 }
 
 func TestSniffDoesNotOverrideAddress(t *testing.T) {

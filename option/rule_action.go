@@ -96,7 +96,7 @@ func (r *RuleAction) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	var overrideAddressWithDomain *RouteOverrideAddressWithDomain
+	var overrideAddressWithDomain *RouteOverrideAddressWithDomainOptions
 	switch r.Action {
 	case C.RuleActionTypeRoute:
 		overrideAddressWithDomain = &r.RouteOptions.OverrideAddressWithDomain
@@ -200,9 +200,9 @@ type RouteActionOptions struct {
 }
 
 type RawRouteOptionsActionOptions struct {
-	OverrideAddress           string                         `json:"override_address,omitempty"`
-	OverridePort              uint16                         `json:"override_port,omitempty"`
-	OverrideAddressWithDomain RouteOverrideAddressWithDomain `json:"override_address_with_domain,omitempty"`
+	OverrideAddress           string                                `json:"override_address,omitempty"`
+	OverridePort              uint16                                `json:"override_port,omitempty"`
+	OverrideAddressWithDomain RouteOverrideAddressWithDomainOptions `json:"override_address_with_domain,omitempty,omitzero"`
 
 	NetworkStrategy *NetworkStrategy `json:"network_strategy,omitempty"`
 	FallbackDelay   uint32           `json:"fallback_delay,omitempty"`
@@ -350,20 +350,71 @@ type RouteActionSniff struct {
 	Timeout badoption.Duration         `json:"timeout,omitempty"`
 }
 
-type RouteOverrideAddressWithDomain string
+type RouteOverrideAddressWithDomainCondition string
 
-func (o *RouteOverrideAddressWithDomain) UnmarshalJSON(content []byte) error {
+type _RouteOverrideAddressWithDomainOptions struct {
+	Condition RouteOverrideAddressWithDomainCondition     `json:"condition,omitempty" enum:"disable,always,if_resolvable"`
+	Scope     *RouteOverrideAddressWithDomainScopeOptions `json:"scope,omitempty"`
+}
+
+type RouteOverrideAddressWithDomainOptions _RouteOverrideAddressWithDomainOptions
+
+type RouteOverrideAddressWithDomainScopeOptions struct {
+	Domain *bool `json:"domain,omitempty"`
+	IP     *bool `json:"ip,omitempty"`
+}
+
+func (o RouteOverrideAddressWithDomainOptions) IsZero() bool {
+	return o.Condition == RouteOverrideAddressWithDomainCondition(C.RouteOverrideAddressWithDomainDefault) &&
+		(o.Scope == nil || o.Scope.IsZero())
+}
+
+func (o RouteOverrideAddressWithDomainScopeOptions) IsZero() bool {
+	return o.Domain == nil && o.IP == nil
+}
+
+func (o RouteOverrideAddressWithDomainOptions) MarshalJSON() ([]byte, error) {
+	if o.Scope != nil && o.Scope.IsZero() {
+		o.Scope = nil
+	}
+	return json.Marshal((_RouteOverrideAddressWithDomainOptions)(o))
+}
+
+func (o *RouteOverrideAddressWithDomainOptions) UnmarshalJSON(content []byte) error {
+	*o = RouteOverrideAddressWithDomainOptions{}
 	rawValue := strings.TrimSpace(string(content))
 	switch rawValue {
 	case "false":
-		*o = C.RouteOverrideAddressWithDomainDefault
+		*o = RouteOverrideAddressWithDomainOptions{}
 		return nil
 	case "true":
-		*o = C.RouteOverrideAddressWithDomainAlways
+		o.Condition = RouteOverrideAddressWithDomainCondition(C.RouteOverrideAddressWithDomainAlways)
 		return nil
 	}
-	if len(rawValue) == 0 || rawValue[0] != '"' {
-		return E.New("override address with domain must be a boolean or string")
+	if len(rawValue) == 0 {
+		return E.New("override address with domain must be a boolean, string, or object")
+	}
+	if rawValue[0] == '{' {
+		var options _RouteOverrideAddressWithDomainOptions
+		if err := json.UnmarshalDisallowUnknownFields(content, &options); err != nil {
+			return err
+		}
+		switch options.Condition {
+		case RouteOverrideAddressWithDomainCondition(C.RouteOverrideAddressWithDomainDefault),
+			RouteOverrideAddressWithDomainCondition(C.RouteOverrideAddressWithDomainDisable),
+			RouteOverrideAddressWithDomainCondition(C.RouteOverrideAddressWithDomainAlways),
+			RouteOverrideAddressWithDomainCondition(C.RouteOverrideAddressWithDomainIfResolvable):
+		default:
+			return E.New("unknown override address with domain condition: ", string(options.Condition))
+		}
+		if options.Scope != nil && options.Scope.IsZero() {
+			options.Scope = nil
+		}
+		*o = RouteOverrideAddressWithDomainOptions(options)
+		return nil
+	}
+	if rawValue[0] != '"' {
+		return E.New("override address with domain must be a boolean, string, or object")
 	}
 	var mode string
 	if err := json.Unmarshal(content, &mode); err != nil {
@@ -371,16 +422,21 @@ func (o *RouteOverrideAddressWithDomain) UnmarshalJSON(content []byte) error {
 	}
 	switch mode {
 	case C.RouteOverrideAddressWithDomainDefault:
-		*o = C.RouteOverrideAddressWithDomainDefault
+		*o = RouteOverrideAddressWithDomainOptions{}
 	case C.RouteOverrideAddressWithDomainDisable, C.RouteOverrideAddressWithDomainAlways, C.RouteOverrideAddressWithDomainIfResolvable:
-		*o = RouteOverrideAddressWithDomain(mode)
+		o.Condition = RouteOverrideAddressWithDomainCondition(mode)
 	default:
-		return E.New("unknown override address with domain mode: ", mode)
+		return E.New("unknown override address with domain condition: ", mode)
 	}
 	return nil
 }
 
-func (o RouteOverrideAddressWithDomain) DescribeSchema(builder schema.Builder) (*schema.Node, error) {
+func (o RouteOverrideAddressWithDomainOptions) DescribeSchema(builder schema.Builder) (*schema.Node, error) {
+	objectForm := schema.StrictObject()
+	err := builder.FlattenStruct(objectForm, reflect.TypeFor[_RouteOverrideAddressWithDomainOptions]())
+	if err != nil {
+		return nil, err
+	}
 	return schema.AnyOf(
 		schema.BooleanNode(),
 		schema.StringEnum(
@@ -389,6 +445,7 @@ func (o RouteOverrideAddressWithDomain) DescribeSchema(builder schema.Builder) (
 			C.RouteOverrideAddressWithDomainAlways,
 			C.RouteOverrideAddressWithDomainIfResolvable,
 		),
+		objectForm,
 	), nil
 }
 
@@ -396,6 +453,7 @@ type RouteActionResolve struct {
 	Server                 string                `json:"server,omitempty" reference:"dns_server"`
 	Timeout                badoption.Duration    `json:"timeout,omitempty"`
 	Strategy               DomainStrategy        `json:"strategy,omitempty"`
+	RouteOnly              bool                  `json:"route_only,omitempty"`
 	DisableCache           bool                  `json:"disable_cache,omitempty"`
 	DisableOptimisticCache bool                  `json:"disable_optimistic_cache,omitempty"`
 	RewriteTTL             *uint32               `json:"rewrite_ttl,omitempty"`

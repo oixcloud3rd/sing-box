@@ -29,10 +29,17 @@ func newRuleActionRouteOptions(options option.RawRouteOptionsActionOptions) (Rul
 	if err != nil {
 		return RuleActionRouteOptions{}, err
 	}
+	overrideAddressWithDomain := RuleActionOverrideAddressWithDomain{
+		Condition: string(options.OverrideAddressWithDomain.Condition),
+	}
+	if options.OverrideAddressWithDomain.Scope != nil {
+		overrideAddressWithDomain.ScopeDomain = options.OverrideAddressWithDomain.Scope.Domain
+		overrideAddressWithDomain.ScopeIP = options.OverrideAddressWithDomain.Scope.IP
+	}
 	return RuleActionRouteOptions{
 		OverrideAddress:           M.ParseSocksaddrHostPort(options.OverrideAddress, 0),
 		OverridePort:              options.OverridePort,
-		OverrideAddressWithDomain: string(options.OverrideAddressWithDomain),
+		OverrideAddressWithDomain: overrideAddressWithDomain,
 		NetworkStrategy:           (*C.NetworkStrategy)(options.NetworkStrategy),
 		FallbackDelay:             time.Duration(options.FallbackDelay),
 		UDPDisableDomainUnmapping: options.UDPDisableDomainUnmapping,
@@ -115,6 +122,7 @@ func NewRuleAction(ctx context.Context, logger logger.ContextLogger, action opti
 			Server:                 action.ResolveOptions.Server,
 			Timeout:                time.Duration(action.ResolveOptions.Timeout),
 			Strategy:               C.DomainStrategy(action.ResolveOptions.Strategy),
+			RouteOnly:              action.ResolveOptions.RouteOnly,
 			DisableCache:           action.ResolveOptions.DisableCache,
 			DisableOptimisticCache: action.ResolveOptions.DisableOptimisticCache,
 			RewriteTTL:             action.ResolveOptions.RewriteTTL,
@@ -220,10 +228,16 @@ func (r *RuleActionBypass) String() string {
 	return F.ToString("bypass(", strings.Join(descriptions, ","), ")")
 }
 
+type RuleActionOverrideAddressWithDomain struct {
+	Condition   string
+	ScopeDomain *bool
+	ScopeIP     *bool
+}
+
 type RuleActionRouteOptions struct {
 	OverrideAddress           M.Socksaddr
 	OverridePort              uint16
-	OverrideAddressWithDomain string
+	OverrideAddressWithDomain RuleActionOverrideAddressWithDomain
 	NetworkStrategy           *C.NetworkStrategy
 	NetworkType               []C.InterfaceType
 	FallbackNetworkType       []C.InterfaceType
@@ -254,8 +268,14 @@ func (r *RuleActionRouteOptions) Descriptions() []string {
 	if r.OverridePort > 0 {
 		descriptions = append(descriptions, F.ToString("override-port=", r.OverridePort))
 	}
-	if r.OverrideAddressWithDomain != C.RouteOverrideAddressWithDomainDefault {
-		descriptions = append(descriptions, F.ToString("override-address-with-domain=", r.OverrideAddressWithDomain))
+	if r.OverrideAddressWithDomain.Condition != C.RouteOverrideAddressWithDomainDefault {
+		descriptions = append(descriptions, F.ToString("override-address-with-domain=", r.OverrideAddressWithDomain.Condition))
+	}
+	if r.OverrideAddressWithDomain.ScopeDomain != nil {
+		descriptions = append(descriptions, F.ToString("override-address-with-domain-scope-domain=", *r.OverrideAddressWithDomain.ScopeDomain))
+	}
+	if r.OverrideAddressWithDomain.ScopeIP != nil {
+		descriptions = append(descriptions, F.ToString("override-address-with-domain-scope-ip=", *r.OverrideAddressWithDomain.ScopeIP))
 	}
 	if r.NetworkStrategy != nil {
 		descriptions = append(descriptions, F.ToString("network-strategy=", r.NetworkStrategy))
@@ -564,6 +584,7 @@ type RuleActionResolve struct {
 	Server                 string
 	Timeout                time.Duration
 	Strategy               C.DomainStrategy
+	RouteOnly              bool
 	DisableCache           bool
 	DisableOptimisticCache bool
 	RewriteTTL             *uint32
@@ -581,6 +602,9 @@ func (r *RuleActionResolve) String() string {
 	}
 	if r.Strategy != C.DomainStrategyAsIS {
 		options = append(options, F.ToString(option.DomainStrategy(r.Strategy)))
+	}
+	if r.RouteOnly {
+		options = append(options, "route_only")
 	}
 	if r.DisableCache {
 		options = append(options, "disable_cache")

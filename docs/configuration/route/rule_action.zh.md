@@ -9,6 +9,7 @@ icon: material/new-box
 
 !!! quote "sing-box 1.14.0 中的更改"
 
+    :material-plus: [resolve.route_only](#route_only)
     :material-plus: [resolve.disable_optimistic_cache](#disable_optimistic_cache)  
     :material-plus: [resolve.timeout](#timeout)  
     :material-plus: [tls_spoof](#tls_spoof)  
@@ -137,7 +138,13 @@ icon: material/new-box
   "action": "route-options",
   "override_address": "",
   "override_port": 0,
-  "override_address_with_domain": "",
+  "override_address_with_domain": {
+    "condition": "always",
+    "scope": {
+      "domain": true,
+      "ip": true
+    }
+  },
   "network_strategy": "",
   "fallback_delay": "",
   "udp_disable_domain_unmapping": false,
@@ -169,14 +176,30 @@ icon: material/new-box
 
 控制路由完成后，是否以路由元数据中的域名覆写连接目标地址。
 
-可用值：
+结构：
+
+```json
+{
+  "condition": "always",
+  "scope": {
+    "domain": false,
+    "ip": true
+  }
+}
+```
+
+可用条件：
 
 - `disable`：不覆写目标地址，并覆盖之前的 `route-options` 动作所设置的值。
 - `always`：HTTP、TLS 或 QUIC 协议探测提供有效域名时覆写地址。
 - `if_resolvable`：仅当已知该域名具有有效 A 或 AAAA 记录时覆写地址。
 
-空值不会改变之前的 `route-options` 动作所设置的值；使用 `disable` 可显式清除继承的模式。
-为了兼容，`false` 等同于空值，`true` 等同于 `always`。
+`scope.domain` 控制是否覆写当前为域名的目标，`scope.ip` 控制是否覆写当前为 IP 的目标，两者默认均为
+`true`。省略 condition 或任一 scope 字段时，会分别继承之前的 `route-options` 动作所设置的值；显式设置
+scope 字段为 `true` 或 `false` 可独立更新该值。
+
+为了兼容，仍接受旧布尔值和字符串格式：`false` 和空字符串不会改变 condition，`true` 等同于
+`always`，`disable`、`always`、`if_resolvable` 对应同名 condition。旧格式不会改变 scope。
 
 当两个选项同时生效时，`override_address` 优先。以域名覆写地址时会保留 `override_port` 设置的端口。
 
@@ -321,6 +344,7 @@ UDP 连接超时时间。
   "action": "resolve",
   "server": "",
   "strategy": "",
+  "route_only": false,
   "disable_cache": false,
   "disable_optimistic_cache": false,
   "rewrite_ttl": null,
@@ -340,6 +364,16 @@ UDP 连接超时时间。
 DNS 解析策略，可用值有：`prefer_ipv4`、`prefer_ipv6`、`ipv4_only`、`ipv6_only`。
 
 默认使用 `dns.strategy`。
+
+#### route_only
+
+!!! question "自 sing-box 1.14.0 起"
+
+启用后，解析出的 IP 地址仅用于后续路由规则和 FakeIP 预匹配，不会传递给出站用于拨号。
+
+拨号时仍使用原始域名目标。
+
+默认禁用。
 
 #### disable_cache
 

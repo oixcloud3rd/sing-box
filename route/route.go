@@ -160,6 +160,7 @@ func (r *Router) routeConnection(ctx context.Context, conn net.Conn, metadata ad
 		selectedOutbound = defaultOutbound
 	}
 	r.applyOverrideAddressWithDomain(ctx, &metadata)
+	clearRouteOnlyDestinationAddresses(&metadata)
 
 	for _, buffer := range buffers {
 		conn = bufio.NewCachedConn(conn, buffer)
@@ -289,6 +290,7 @@ func (r *Router) routePacketConnection(ctx context.Context, conn N.PacketConn, m
 		selectedOutbound = defaultOutbound
 	}
 	r.applyOverrideAddressWithDomain(ctx, &metadata)
+	clearRouteOnlyDestinationAddresses(&metadata)
 	for _, buffer := range packetBuffers {
 		conn = bufio.NewCachedPacketConn(conn, buffer.Buffer, buffer.Destination)
 		N.PutPacketBuffer(buffer)
@@ -411,15 +413,26 @@ func (r *Router) PreMatch(metadata adapter.InboundContext, firstPacket []byte) a
 }
 
 func applyRouteOptionsOverride(metadata *adapter.InboundContext, routeOptions *R.RuleActionRouteOptions) {
-	if routeOptions.OverrideAddressWithDomain != C.RouteOverrideAddressWithDomainDefault {
-		metadata.RouteOverrideAddressWithDomain = routeOptions.OverrideAddressWithDomain
+	overrideAddressWithDomain := routeOptions.OverrideAddressWithDomain
+	if overrideAddressWithDomain.Condition != C.RouteOverrideAddressWithDomainDefault {
+		metadata.RouteOverrideAddressWithDomain = overrideAddressWithDomain.Condition
+	}
+	if overrideAddressWithDomain.ScopeDomain != nil {
+		metadata.RouteOverrideAddressWithDomainScopeDomain = overrideAddressWithDomain.ScopeDomain
+	}
+	if overrideAddressWithDomain.ScopeIP != nil {
+		metadata.RouteOverrideAddressWithDomainScopeIP = overrideAddressWithDomain.ScopeIP
 	}
 	if routeOptions.OverrideAddress.IsValid() {
 		metadata.RouteOverrideAddressSet = true
-		metadata.Destination = M.Socksaddr{
+		destination := M.Socksaddr{
 			Addr: routeOptions.OverrideAddress.Addr,
 			Port: metadata.Destination.Port,
 			Fqdn: routeOptions.OverrideAddress.Fqdn,
+		}
+		if destination != metadata.Destination {
+			clearDestinationAddresses(metadata)
+			metadata.Destination = destination
 		}
 	}
 	if routeOptions.OverridePort > 0 {
@@ -431,6 +444,17 @@ func applyRouteOptionsOverride(metadata *adapter.InboundContext, routeOptions *R
 	}
 	if routeOptions.UDPTimeout > 0 {
 		metadata.UDPTimeout = routeOptions.UDPTimeout
+	}
+}
+
+func clearDestinationAddresses(metadata *adapter.InboundContext) {
+	metadata.DestinationAddresses = nil
+	metadata.DestinationAddressesRouteOnly = false
+}
+
+func clearRouteOnlyDestinationAddresses(metadata *adapter.InboundContext) {
+	if metadata.DestinationAddressesRouteOnly {
+		clearDestinationAddresses(metadata)
 	}
 }
 
@@ -486,13 +510,7 @@ func (r *Router) preMatchFlow(ctx context.Context, metadata *adapter.InboundCont
 		if !metadata.FakeIP {
 			return continueResult
 		}
-		var newDestination netip.Addr
-		for _, address := range metadata.DestinationAddresses {
-			if address.Is4() == packetDestination.IsIPv4() {
-				newDestination = address
-				break
-			}
-		}
+		newDestination := destinationAddressForFamily(metadata.DestinationAddresses, packetDestination.IsIPv4())
 		if !newDestination.IsValid() {
 			if len(metadata.DestinationAddresses) == 0 {
 				r.logger.WarnContext(ctx, "pre-match: reject ", metadata.Network, " connection from ", metadata.Source.AddrString(), " to fake destination ", metadata.Destination.Fqdn, ": a resolve action is required before routing to outbound/", outbound.Type(), "[", outbound.Tag(), "]")
@@ -526,6 +544,15 @@ func (r *Router) preMatchFlow(ctx context.Context, metadata *adapter.InboundCont
 		return multiFlowTracker(flowTrackers)
 	}
 	return result
+}
+
+func destinationAddressForFamily(addresses []netip.Addr, ipv4 bool) netip.Addr {
+	for _, address := range addresses {
+		if address.Is4() == ipv4 {
+			return address
+		}
+	}
+	return netip.Addr{}
 }
 
 func (r *Router) prepareMatchMetadata(ctx context.Context, metadata *adapter.InboundContext) error {
@@ -615,9 +642,6 @@ match:
 			// TODO: add nat
 			if (routeOptions.OverrideAddress.IsValid() || routeOptions.OverridePort > 0) && !metadata.RouteOriginalDestination.IsValid() {
 				metadata.RouteOriginalDestination = metadata.Destination
-			}
-			if routeOptions.OverrideAddress.IsValid() {
-				metadata.DestinationAddresses = nil
 			}
 			applyRouteOptionsOverride(metadata, routeOptions)
 			if routeOptions.NetworkStrategy != nil {
@@ -890,6 +914,7 @@ func (r *Router) actionResolve(ctx context.Context, metadata *adapter.InboundCon
 			return err
 		}
 		metadata.DestinationAddresses = addresses
+		metadata.DestinationAddressesRouteOnly = action.RouteOnly
 		r.logger.DebugContext(ctx, "resolved [", strings.Join(F.MapToString(metadata.DestinationAddresses), " "), "]")
 	}
 	return nil
