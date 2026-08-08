@@ -79,6 +79,9 @@ List of [rule-set](/configuration/rule-set/)
 
 Default outbound tag. the first outbound will be used if empty.
 
+Use a non-final [`route-options`](./rule_action/#route-options) action to configure routing options for connections using the
+default outbound.
+
 #### auto_detect_interface
 
 !!! quote ""

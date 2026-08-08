@@ -144,6 +144,7 @@ Not available when `method` is set to drop.
   "action": "route-options",
   "override_address": "",
   "override_port": 0,
+  "override_address_with_domain": "",
   "network_strategy": "",
   "fallback_delay": "",
   "udp_disable_domain_unmapping": false,
@@ -166,6 +167,30 @@ Override the connection destination address.
 #### override_port
 
 Override the connection destination port.
+
+#### override_address_with_domain
+
+Controls whether the connection destination address is replaced with the domain from route metadata after routing is complete.
+
+Available values:
+
+- `disable`: Do not replace the destination address, overriding any value inherited from an earlier `route-options` action.
+- `always`: Override the address whenever a valid domain is available from HTTP, TLS, or QUIC protocol detection.
+- `if_resolvable`: Override only after the domain is known to have a valid A or AAAA record.
+
+An empty value leaves the value set by an earlier `route-options` action unchanged. Use `disable` to explicitly clear an
+inherited mode. For compatibility, `false` is equivalent to an empty value and `true` is equivalent to `always`.
+
+`override_address` takes precedence when both options are effective. `override_port` is preserved when the address is
+replaced with a domain.
+
+`if_resolvable` checks the DNS cache without sending a blocking query. On a cache miss, the current connection keeps its
+original IP address while sing-box evaluates the domain in the background through the configured DNS rules. Later
+connections can use the domain after a successful evaluation. The resolved addresses do not need to contain the original
+destination IP.
+
+Only domains detected from HTTP, TLS, and QUIC are accepted. In particular, a DNS query name detected by the DNS sniffer
+never overrides the destination address.
 
 #### network_strategy
 

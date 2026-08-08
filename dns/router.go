@@ -1222,7 +1222,7 @@ func (r *Router) Lookup(ctx context.Context, domain string, options adapter.DNSQ
 		if err == nil && len(responseAddrs) == 0 {
 			err = E.New("empty result")
 		}
-		if err != nil {
+		if err != nil && !options.Quiet {
 			if errors.Is(err, ErrResponseRejectedCached) {
 				r.logger.DebugContext(ctx, "response rejected for ", domain, " (cached)")
 			} else if errors.Is(err, ErrResponseRejected) {
@@ -1239,7 +1239,9 @@ func (r *Router) Lookup(ctx context.Context, domain string, options adapter.DNSQ
 			err = E.Cause(err, "lookup ", domain)
 		}
 	}
-	r.logger.DebugContext(ctx, "lookup domain ", domain)
+	if !options.Quiet {
+		r.logger.DebugContext(ctx, "lookup domain ", domain)
+	}
 	ctx, metadata := adapter.ExtendContext(ctx)
 	metadata.Destination = M.Socksaddr{}
 	metadata.Domain = FqdnToDomain(domain)
@@ -1300,7 +1302,7 @@ func (r *Router) Lookup(ctx context.Context, domain string, options adapter.DNSQ
 	}
 response:
 	printResult()
-	if len(responseAddrs) > 0 {
+	if len(responseAddrs) > 0 && !options.Quiet {
 		r.logger.InfoContext(ctx, "lookup succeed for ", domain, ": ", strings.Join(F.MapToString(responseAddrs), " "))
 	}
 	return responseAddrs, err

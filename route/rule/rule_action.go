@@ -32,6 +32,7 @@ func newRuleActionRouteOptions(options option.RawRouteOptionsActionOptions) (Rul
 	return RuleActionRouteOptions{
 		OverrideAddress:           M.ParseSocksaddrHostPort(options.OverrideAddress, 0),
 		OverridePort:              options.OverridePort,
+		OverrideAddressWithDomain: string(options.OverrideAddressWithDomain),
 		NetworkStrategy:           (*C.NetworkStrategy)(options.NetworkStrategy),
 		FallbackDelay:             time.Duration(options.FallbackDelay),
 		UDPDisableDomainUnmapping: options.UDPDisableDomainUnmapping,
@@ -222,6 +223,7 @@ func (r *RuleActionBypass) String() string {
 type RuleActionRouteOptions struct {
 	OverrideAddress           M.Socksaddr
 	OverridePort              uint16
+	OverrideAddressWithDomain string
 	NetworkStrategy           *C.NetworkStrategy
 	NetworkType               []C.InterfaceType
 	FallbackNetworkType       []C.InterfaceType
@@ -251,6 +253,9 @@ func (r *RuleActionRouteOptions) Descriptions() []string {
 	}
 	if r.OverridePort > 0 {
 		descriptions = append(descriptions, F.ToString("override-port=", r.OverridePort))
+	}
+	if r.OverrideAddressWithDomain != C.RouteOverrideAddressWithDomainDefault {
+		descriptions = append(descriptions, F.ToString("override-address-with-domain=", r.OverrideAddressWithDomain))
 	}
 	if r.NetworkStrategy != nil {
 		descriptions = append(descriptions, F.ToString("network-strategy=", r.NetworkStrategy))
@@ -502,8 +507,6 @@ type RuleActionSniff struct {
 	StreamSniffers []sniff.StreamSniffer
 	PacketSniffers []sniff.PacketSniffer
 	Timeout        time.Duration
-	// Deprecated
-	OverrideDestination bool
 }
 
 func (r *RuleActionSniff) Type() string {
@@ -544,15 +547,17 @@ func (r *RuleActionSniff) build() error {
 }
 
 func (r *RuleActionSniff) String() string {
-	if len(r.SnifferNames) == 0 && r.Timeout == 0 {
-		return "sniff"
-	} else if len(r.SnifferNames) > 0 && r.Timeout == 0 {
-		return F.ToString("sniff(", strings.Join(r.SnifferNames, ","), ")")
-	} else if len(r.SnifferNames) == 0 && r.Timeout > 0 {
-		return F.ToString("sniff(", r.Timeout.String(), ")")
-	} else {
-		return F.ToString("sniff(", strings.Join(r.SnifferNames, ","), ",", r.Timeout.String(), ")")
+	var options []string
+	if len(r.SnifferNames) > 0 {
+		options = append(options, strings.Join(r.SnifferNames, ","))
 	}
+	if r.Timeout > 0 {
+		options = append(options, r.Timeout.String())
+	}
+	if len(options) == 0 {
+		return "sniff"
+	}
+	return F.ToString("sniff(", strings.Join(options, ","), ")")
 }
 
 type RuleActionResolve struct {

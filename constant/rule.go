@@ -48,3 +48,10 @@ const (
 	RuleActionRejectMethodDrop    = "drop"
 	RuleActionRejectMethodReply   = "reply"
 )
+
+const (
+	RouteOverrideAddressWithDomainDefault      = ""
+	RouteOverrideAddressWithDomainDisable      = "disable"
+	RouteOverrideAddressWithDomainAlways       = "always"
+	RouteOverrideAddressWithDomainIfResolvable = "if_resolvable"
+)

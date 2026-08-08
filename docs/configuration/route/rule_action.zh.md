@@ -137,6 +137,7 @@ icon: material/new-box
   "action": "route-options",
   "override_address": "",
   "override_port": 0,
+  "override_address_with_domain": "",
   "network_strategy": "",
   "fallback_delay": "",
   "udp_disable_domain_unmapping": false,
@@ -163,6 +164,27 @@ icon: material/new-box
 #### override_port
 
 覆盖目标端口。
+
+#### override_address_with_domain
+
+控制路由完成后，是否以路由元数据中的域名覆写连接目标地址。
+
+可用值：
+
+- `disable`：不覆写目标地址，并覆盖之前的 `route-options` 动作所设置的值。
+- `always`：HTTP、TLS 或 QUIC 协议探测提供有效域名时覆写地址。
+- `if_resolvable`：仅当已知该域名具有有效 A 或 AAAA 记录时覆写地址。
+
+空值不会改变之前的 `route-options` 动作所设置的值；使用 `disable` 可显式清除继承的模式。
+为了兼容，`false` 等同于空值，`true` 等同于 `always`。
+
+当两个选项同时生效时，`override_address` 优先。以域名覆写地址时会保留 `override_port` 设置的端口。
+
+`if_resolvable` 首先检查 DNS 缓存且不会发起阻塞查询。缓存未命中时，当前连接继续使用原始 IP 地址，
+sing-box 同时通过已配置的 DNS 规则在后台评估该域名；评估成功后的连接可以使用域名。解析结果无需包含
+连接的原始目标 IP。
+
+仅接受 HTTP、TLS 和 QUIC 探测到的域名。DNS sniffer 检测到的 DNS 查询名永远不会覆写目标地址。
 
 #### network_strategy
 
