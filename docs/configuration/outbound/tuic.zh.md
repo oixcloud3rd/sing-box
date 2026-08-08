@@ -20,6 +20,7 @@
   ... // QUIC 字段
 
   ... // 拨号字段
+  ... // 目标策略字段
 }
 ```
 
@@ -108,3 +109,7 @@ TLS 配置, 参阅 [TLS](/zh/configuration/shared/tls/#出站)。
 ### 拨号字段
 
 参阅 [拨号字段](/zh/configuration/shared/dial/)。
+
+### 目标策略字段
+
+参阅[目标策略字段](/zh/configuration/shared/destination-strategy/)。

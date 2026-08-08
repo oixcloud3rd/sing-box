@@ -109,6 +109,7 @@
   ],
 
   ... // Dial Fields
+  ... // Destination Strategy Fields
 }
 ```
 
@@ -641,6 +642,10 @@ See [UDP NAT Fields](/configuration/shared/udp-nat/) for details.
 ## Dial Fields
 
 See [Dial Fields](/configuration/shared/dial/) for details.
+
+## Destination Strategy Fields
+
+See [Destination Strategy Fields](/configuration/shared/destination-strategy/) for details.
 
 ## Interactive authentication
 

@@ -16,6 +16,7 @@ type AnyTLSUser struct {
 
 type AnyTLSOutboundOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	ServerOptions
 	OutboundTLSOptionsContainer
 	Password                 string             `json:"password,omitempty"`

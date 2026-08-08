@@ -2,6 +2,7 @@ package option
 
 type ShadowsocksROutboundOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	ServerOptions
 	Method        string      `json:"method"`
 	Password      string      `json:"password"`

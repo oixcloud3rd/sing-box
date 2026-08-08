@@ -47,6 +47,7 @@ icon: material/new-box
   "taildrop_directory": "",
 
   ... // Dial Fields
+  ... // Destination Strategy Fields
 }
 ```
 
@@ -231,6 +232,10 @@ is.
     Dial Fields in Tailscale endpoints only control how it connects to the control plane and have nothing to do with actual connections.
 
 See [Dial Fields](/configuration/shared/dial/) for details.
+
+### Destination Strategy Fields
+
+See [Destination Strategy Fields](/configuration/shared/destination-strategy/) for details.
 
 ### Interactive authentication
 

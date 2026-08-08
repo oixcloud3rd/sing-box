@@ -78,6 +78,7 @@ type _SnellOutboundOptions struct {
 
 type AbstractSnellOutboundOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	ServerOptions
 	PSK        string      `json:"psk"`
 	UserKey    string      `json:"userkey,omitempty"`

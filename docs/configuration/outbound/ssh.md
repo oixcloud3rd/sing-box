@@ -28,6 +28,7 @@
   "kex_algorithm": [],
 
   ... // Dial Fields
+  ... // Destination Strategy Fields
 }
 ```
 
@@ -96,3 +97,7 @@ Allowed key exchange algorithms. Default values are used if empty.
 ### Dial Fields
 
 See [Dial Fields](/configuration/shared/dial/) for details.
+
+### Destination Strategy Fields
+
+See [Destination Strategy Fields](/configuration/shared/destination-strategy/) for details.

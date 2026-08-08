@@ -9,6 +9,7 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/log"
+	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/auth"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -105,7 +106,7 @@ func (b *Bridge) NewConnectionEx(ctx context.Context, conn net.Conn, source M.So
 	metadata.Destination = destination
 	metadata.Network = N.NetworkTCP
 	b.logger.InfoContext(ctx, b.tag, " connection to ", metadata.Destination)
-	b.connection.NewConnection(ctx, b.dialer, conn, metadata, onClose)
+	b.connection.NewConnection(ctx, adapter.ConnectionDialer{Dialer: b.dialer, DestinationStrategy: option.DefaultDestinationStrategy()}, conn, metadata, onClose)
 }
 
 func (b *Bridge) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, source M.Socksaddr, destination M.Socksaddr, onClose N.CloseHandlerFunc) {
@@ -114,5 +115,5 @@ func (b *Bridge) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, s
 	metadata.Destination = destination
 	metadata.Network = N.NetworkUDP
 	b.logger.InfoContext(ctx, b.tag, " packet connection to ", metadata.Destination)
-	b.connection.NewPacketConnection(ctx, b.dialer, conn, metadata, onClose)
+	b.connection.NewPacketConnection(ctx, adapter.ConnectionDialer{Dialer: b.dialer, DestinationStrategy: option.DefaultDestinationStrategy()}, conn, metadata, onClose)
 }

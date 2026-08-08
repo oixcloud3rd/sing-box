@@ -55,6 +55,7 @@
   },
 
   ... // 拨号字段
+  ... // 目标策略字段
 }
 ```
 
@@ -272,3 +273,7 @@ Realm 的 Bearer 令牌，需与 realm 上配置的 `users[].token` 之一匹配
 ### 拨号字段
 
 参阅 [拨号字段](/zh/configuration/shared/dial/)。
+
+### 目标策略字段
+
+参阅[目标策略字段](/zh/configuration/shared/destination-strategy/)。

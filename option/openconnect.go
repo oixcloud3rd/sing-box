@@ -4,6 +4,7 @@ import "github.com/sagernet/sing/common/json/badoption"
 
 type OpenConnectEndpointOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	System                         bool                                 `json:"system,omitempty"`
 	Name                           string                               `json:"name,omitempty"`
 	UDPTimeout                     badoption.Duration                   `json:"udp_timeout,omitempty"`

@@ -16,6 +16,7 @@
   "transport": {},
 
   ... // Dial Fields
+  ... // Destination Strategy Fields
 }
 ```
 
@@ -80,3 +81,7 @@ V2Ray Transport configuration, see [V2Ray Transport](/configuration/shared/v2ray
 ### Dial Fields
 
 See [Dial Fields](/configuration/shared/dial/) for details.
+
+### Destination Strategy Fields
+
+See [Destination Strategy Fields](/configuration/shared/destination-strategy/) for details.

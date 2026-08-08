@@ -13,6 +13,7 @@ sing-box uses JSON for configuration files.
   "certificate_providers": [],
   "http_clients": [],
   "network_namespaces": [],
+  "domain_evaluators": [],
   "endpoints": [],
   "inbounds": [],
   "outbounds": [],
@@ -34,6 +35,7 @@ sing-box uses JSON for configuration files.
 | `certificate_providers` | [Certificate Provider](./shared/certificate-provider/) |
 | `http_clients` | [HTTP Client](./shared/http-client/) |
 | `network_namespaces` | [Network Namespace](./network-namespace/) |
+| `domain_evaluators` | [Domain Evaluator](./shared/domain-evaluator/) |
 | `endpoints`    | [Endpoint](./endpoint/)         |
 | `inbounds`     | [Inbound](./inbound/)           |
 | `outbounds`    | [Outbound](./outbound/)         |

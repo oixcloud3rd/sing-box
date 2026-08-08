@@ -11,6 +11,7 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	boxCertificate "github.com/sagernet/sing-box/adapter/certificate"
+	boxDomainEvaluator "github.com/sagernet/sing-box/adapter/domain_evaluator"
 	"github.com/sagernet/sing-box/adapter/endpoint"
 	"github.com/sagernet/sing-box/adapter/inbound"
 	"github.com/sagernet/sing-box/adapter/outbound"
@@ -56,6 +57,7 @@ type Box struct {
 	certificateProvider *boxCertificate.Manager
 	dnsTransport        *dns.TransportManager
 	dnsRouter           *dns.Router
+	domainEvaluator     *boxDomainEvaluator.Manager
 	connection          *route.ConnectionManager
 	router              *route.Router
 	httpClientService   adapter.LifecycleService
@@ -228,12 +230,20 @@ func New(options Options) (*Box, error) {
 	}
 	service.MustRegister[adapter.DNSRouter](ctx, dnsRouter)
 	service.MustRegister[adapter.DNSRuleSetUpdateValidator](ctx, dnsRouter)
+	domainEvaluatorManager := boxDomainEvaluator.NewManager(
+		ctx,
+		logFactory.NewLogger("domain-evaluator"),
+		dnsRouter,
+		dnsTransportManager,
+		options.DomainEvaluators,
+	)
+	service.MustRegister[adapter.DomainEvaluatorManager](ctx, domainEvaluatorManager)
 	networkManager, err := route.NewNetworkManager(ctx, logFactory.NewLogger("network"), routeOptions, dnsOptions)
 	if err != nil {
 		return nil, E.Cause(err, "initialize network manager")
 	}
 	service.MustRegister[adapter.NetworkManager](ctx, networkManager)
-	connectionManager := route.NewConnectionManager(logFactory.NewLogger("connection"))
+	connectionManager := route.NewConnectionManager(ctx, logFactory.NewLogger("connection"))
 	service.MustRegister[adapter.ConnectionManager](ctx, connectionManager)
 	// Must register after ConnectionManager: the Apple HTTP engine's proxy bridge reads it from the context when Manager.Start resolves the default client.
 	httpClientManager := httpclient.NewManager(ctx, logFactory.NewLogger("httpclient"), options.HTTPClients, routeOptions.DefaultHTTPClient)
@@ -473,6 +483,7 @@ func New(options Options) (*Box, error) {
 		service:             serviceManager,
 		certificateProvider: certificateProviderManager,
 		dnsRouter:           dnsRouter,
+		domainEvaluator:     domainEvaluatorManager,
 		connection:          connectionManager,
 		router:              router,
 		httpClientService:   httpClientService,
@@ -540,11 +551,11 @@ func (s *Box) preStart() error {
 	if err != nil {
 		return err
 	}
-	err = adapter.Start(s.logger, adapter.StartStateInitialize, s.network, s.dnsTransport, s.dnsRouter, s.connection, s.router, s.outbound, s.inbound, s.endpoint, s.service, s.certificateProvider)
+	err = adapter.Start(s.logger, adapter.StartStateInitialize, s.network, s.dnsTransport, s.dnsRouter, s.domainEvaluator, s.connection, s.router, s.outbound, s.inbound, s.endpoint, s.service, s.certificateProvider)
 	if err != nil {
 		return err
 	}
-	err = adapter.Start(s.logger, adapter.StartStateStart, s.outbound, s.dnsTransport, s.network, s.connection)
+	err = adapter.Start(s.logger, adapter.StartStateStart, s.outbound, s.dnsTransport, s.domainEvaluator, s.network, s.connection)
 	if err != nil {
 		return err
 	}
@@ -580,7 +591,7 @@ func (s *Box) start() error {
 	if err != nil {
 		return err
 	}
-	err = adapter.Start(s.logger, adapter.StartStatePostStart, s.outbound, s.network, s.dnsTransport, s.dnsRouter, s.connection, s.router, s.endpoint, s.certificateProvider, s.inbound, s.service)
+	err = adapter.Start(s.logger, adapter.StartStatePostStart, s.outbound, s.network, s.dnsTransport, s.dnsRouter, s.domainEvaluator, s.connection, s.router, s.endpoint, s.certificateProvider, s.inbound, s.service)
 	if err != nil {
 		return err
 	}
@@ -588,7 +599,7 @@ func (s *Box) start() error {
 	if err != nil {
 		return err
 	}
-	err = adapter.Start(s.logger, adapter.StartStateStarted, s.network, s.dnsTransport, s.dnsRouter, s.connection, s.router, s.outbound, s.endpoint, s.certificateProvider, s.inbound, s.service)
+	err = adapter.Start(s.logger, adapter.StartStateStarted, s.network, s.dnsTransport, s.dnsRouter, s.domainEvaluator, s.connection, s.router, s.outbound, s.endpoint, s.certificateProvider, s.inbound, s.service)
 	if err != nil {
 		return err
 	}
@@ -624,6 +635,7 @@ func (s *Box) Close() error {
 		{"outbound", s.outbound},
 		{"router", s.router},
 		{"connection", s.connection},
+		{"domain-evaluator", s.domainEvaluator},
 		{"dns-router", s.dnsRouter},
 		{"dns-transport", s.dnsTransport},
 		{"network", s.network},

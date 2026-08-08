@@ -7,10 +7,16 @@ icon: material/delete-clock
 ```json
 {
   "type": "block",
-  "tag": "block"
+  "tag": "block",
+
+  ... // Destination Strategy Fields
 }
 ```
 
 ### Fields
 
-No fields.
+No protocol-specific fields.
+
+### Destination Strategy Fields
+
+See [Destination Strategy Fields](/configuration/shared/destination-strategy/) for details.

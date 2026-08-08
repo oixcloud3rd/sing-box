@@ -26,19 +26,22 @@ import (
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/common/x/list"
+	"github.com/sagernet/sing/service"
 )
 
 var _ adapter.ConnectionManager = (*ConnectionManager)(nil)
 
 type ConnectionManager struct {
-	logger      logger.ContextLogger
-	access      sync.Mutex
-	connections list.List[io.Closer]
+	logger                 logger.ContextLogger
+	domainEvaluatorManager adapter.DomainEvaluatorManager
+	access                 sync.Mutex
+	connections            list.List[io.Closer]
 }
 
-func NewConnectionManager(logger logger.ContextLogger) *ConnectionManager {
+func NewConnectionManager(ctx context.Context, logger logger.ContextLogger) *ConnectionManager {
 	return &ConnectionManager{
-		logger: logger,
+		logger:                 logger,
+		domainEvaluatorManager: service.FromContext[adapter.DomainEvaluatorManager](ctx),
 	}
 }
 
@@ -92,23 +95,25 @@ func (m *ConnectionManager) TrackPacketConn(conn net.PacketConn) net.PacketConn 
 	}
 }
 
-func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
+func (m *ConnectionManager) NewConnection(ctx context.Context, connectionDialer adapter.ConnectionDialer, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
 	ctx = adapter.WithContext(ctx, &metadata)
+	this := connectionDialer.Dialer
+	dialDestination, dialAddresses := m.selectDestination(ctx, connectionDialer.DestinationStrategy, &metadata)
 	var (
 		remoteConn net.Conn
 		err        error
 	)
-	if len(metadata.DestinationAddresses) > 0 || metadata.Destination.IsIP() {
-		remoteConn, err = dialer.DialSerialNetwork(ctx, this, N.NetworkTCP, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
+	if len(dialAddresses) > 0 || dialDestination.IsIP() {
+		remoteConn, err = dialer.DialSerialNetwork(ctx, this, N.NetworkTCP, dialDestination, dialAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
 	} else {
-		remoteConn, err = this.DialContext(ctx, N.NetworkTCP, metadata.Destination)
+		remoteConn, err = this.DialContext(ctx, N.NetworkTCP, dialDestination)
 	}
 	if err != nil {
 		var remoteString string
-		if len(metadata.DestinationAddresses) > 0 {
-			remoteString = "[" + strings.Join(common.Map(metadata.DestinationAddresses, netip.Addr.String), ",") + "]"
+		if len(dialAddresses) > 0 {
+			remoteString = "[" + strings.Join(common.Map(dialAddresses, netip.Addr.String), ",") + "]"
 		} else {
-			remoteString = metadata.Destination.String()
+			remoteString = dialDestination.String()
 		}
 		var dialerString string
 		if outbound, isOutbound := this.(adapter.Outbound); isOutbound {
@@ -153,8 +158,10 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
 	go m.connectionCopy(ctx, remoteConn, conn, true, &done, onClose)
 }
 
-func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dialer, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
+func (m *ConnectionManager) NewPacketConnection(ctx context.Context, connectionDialer adapter.ConnectionDialer, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
 	ctx = adapter.WithContext(ctx, &metadata)
+	this := connectionDialer.Dialer
+	dialDestination, dialAddresses := m.selectDestination(ctx, connectionDialer.DestinationStrategy, &metadata)
 	var (
 		remotePacketConn   net.PacketConn
 		remoteConn         net.Conn
@@ -163,27 +170,27 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 	)
 	if metadata.UDPConnect {
 		parallelDialer, isParallelDialer := this.(dialer.ParallelInterfaceDialer)
-		if len(metadata.DestinationAddresses) > 0 {
+		if len(dialAddresses) > 0 {
 			if isParallelDialer {
-				remoteConn, err = dialer.DialSerialNetwork(ctx, parallelDialer, N.NetworkUDP, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
+				remoteConn, err = dialer.DialSerialNetwork(ctx, parallelDialer, N.NetworkUDP, dialDestination, dialAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
 			} else {
-				remoteConn, err = N.DialSerial(ctx, this, N.NetworkUDP, metadata.Destination, metadata.DestinationAddresses)
+				remoteConn, err = N.DialSerial(ctx, this, N.NetworkUDP, dialDestination, dialAddresses)
 			}
-		} else if metadata.Destination.IsIP() {
+		} else if dialDestination.IsIP() {
 			if isParallelDialer {
-				remoteConn, err = dialer.DialSerialNetwork(ctx, parallelDialer, N.NetworkUDP, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
+				remoteConn, err = dialer.DialSerialNetwork(ctx, parallelDialer, N.NetworkUDP, dialDestination, dialAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
 			} else {
-				remoteConn, err = this.DialContext(ctx, N.NetworkUDP, metadata.Destination)
+				remoteConn, err = this.DialContext(ctx, N.NetworkUDP, dialDestination)
 			}
 		} else {
-			remoteConn, err = this.DialContext(ctx, N.NetworkUDP, metadata.Destination)
+			remoteConn, err = this.DialContext(ctx, N.NetworkUDP, dialDestination)
 		}
 		if err != nil {
 			var remoteString string
-			if len(metadata.DestinationAddresses) > 0 {
-				remoteString = "[" + strings.Join(common.Map(metadata.DestinationAddresses, netip.Addr.String), ",") + "]"
+			if len(dialAddresses) > 0 {
+				remoteString = "[" + strings.Join(common.Map(dialAddresses, netip.Addr.String), ",") + "]"
 			} else {
-				remoteString = metadata.Destination.String()
+				remoteString = dialDestination.String()
 			}
 			var dialerString string
 			if outbound, isOutbound := this.(adapter.Outbound); isOutbound {
@@ -196,16 +203,16 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 		}
 		remotePacketConn = bufio.NewUnbindPacketConn(remoteConn)
 		connRemoteAddr := M.AddrFromNet(remoteConn.RemoteAddr())
-		if connRemoteAddr != metadata.Destination.Addr {
+		if connRemoteAddr != dialDestination.Addr {
 			destinationAddress = connRemoteAddr
 		}
 	} else {
-		if len(metadata.DestinationAddresses) > 0 {
-			remotePacketConn, destinationAddress, err = dialer.ListenSerialNetworkPacket(ctx, this, metadata.Destination, metadata.DestinationAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
+		if len(dialAddresses) > 0 {
+			remotePacketConn, destinationAddress, err = dialer.ListenSerialNetworkPacket(ctx, this, dialDestination, dialAddresses, metadata.NetworkStrategy, metadata.NetworkType, metadata.FallbackNetworkType, metadata.FallbackDelay)
 		} else if packetDialer, withDestination := this.(dialer.PacketDialerWithDestination); withDestination {
-			remotePacketConn, destinationAddress, err = packetDialer.ListenPacketWithDestination(ctx, metadata.Destination)
+			remotePacketConn, destinationAddress, err = packetDialer.ListenPacketWithDestination(ctx, dialDestination)
 		} else {
-			remotePacketConn, err = this.ListenPacket(ctx, metadata.Destination)
+			remotePacketConn, err = this.ListenPacket(ctx, dialDestination)
 		}
 		if err != nil {
 			var dialerString string

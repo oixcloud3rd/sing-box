@@ -36,6 +36,7 @@
   "workers": 0,
 
   ... // 拨号字段
+  ... // 目标策略字段
 }
 ```
 
@@ -135,3 +136,7 @@ WireGuard worker 数量。
 ### 拨号字段
 
 参阅 [拨号字段](/zh/configuration/shared/dial/)。
+
+### 目标策略字段
+
+参阅[目标策略字段](/zh/configuration/shared/destination-strategy/)。

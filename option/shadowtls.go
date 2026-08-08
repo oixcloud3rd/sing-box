@@ -79,6 +79,7 @@ type ShadowTLSHandshakeOptions struct {
 
 type ShadowTLSOutboundOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	ServerOptions
 	Version  int    `json:"version,omitempty" enum:"1,2,3"`
 	Password string `json:"password,omitempty"`

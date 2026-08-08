@@ -28,6 +28,8 @@ icon: material/new-box
   "type": "bridge",
   "tag": "bridge-out",
 
+  ... // 目标策略字段
+
   "interface": "",
   "bridge_name": "",
   "iproute2_table_index": 0,
@@ -70,3 +72,7 @@ icon: material/new-box
 Linux iproute2 规则起始索引。
 
 默认使用 `100`。
+
+### 目标策略字段
+
+参阅[目标策略字段](/zh/configuration/shared/destination-strategy/)。

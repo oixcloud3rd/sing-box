@@ -512,8 +512,6 @@ type RuleActionSniff struct {
 	StreamSniffers []sniff.StreamSniffer
 	PacketSniffers []sniff.PacketSniffer
 	Timeout        time.Duration
-	// Deprecated
-	OverrideDestination bool
 }
 
 func (r *RuleActionSniff) Type() string {

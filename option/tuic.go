@@ -21,6 +21,7 @@ type TUICUser struct {
 
 type TUICOutboundOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	ServerOptions
 	UUID              string             `json:"uuid,omitempty"`
 	Password          string             `json:"password,omitempty"`

@@ -4,6 +4,7 @@ import "github.com/sagernet/sing/common/json/badoption"
 
 type SSHOutboundOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	ServerOptions
 	User                 string                     `json:"user,omitempty"`
 	Password             string                     `json:"password,omitempty"`

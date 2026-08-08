@@ -20,6 +20,7 @@
   ... // QUIC Fields
 
   ... // Dial Fields
+  ... // Destination Strategy Fields
 }
 ```
 
@@ -100,3 +101,7 @@ See [QUIC Fields](/configuration/shared/quic/) for details.
 ### Dial Fields
 
 See [Dial Fields](/configuration/shared/dial/) for details.
+
+### Destination Strategy Fields
+
+See [Destination Strategy Fields](/configuration/shared/destination-strategy/) for details.

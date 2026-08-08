@@ -16,6 +16,7 @@
   "udp_over_tcp": false | {},
 
   ... // Dial Fields
+  ... // Destination Strategy Fields
 }
 ```
 
@@ -64,3 +65,7 @@ See [UDP Over TCP](/configuration/shared/udp-over-tcp/) for details.
 ### Dial Fields
 
 See [Dial Fields](/configuration/shared/dial/) for details.
+
+### Destination Strategy Fields
+
+See [Destination Strategy Fields](/configuration/shared/destination-strategy/) for details.

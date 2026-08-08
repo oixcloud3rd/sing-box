@@ -21,6 +21,7 @@ type HTTPMixedInboundOptions struct {
 
 type SOCKSOutboundOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	ServerOptions
 	Version    string             `json:"version,omitempty" enum:"4,4a,5"`
 	Username   string             `json:"username,omitempty"`
@@ -31,6 +32,7 @@ type SOCKSOutboundOptions struct {
 
 type HTTPOutboundOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	ServerOptions
 	Username string `json:"username,omitempty"`
 	Password string `json:"password,omitempty"`

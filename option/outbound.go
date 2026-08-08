@@ -1,7 +1,10 @@
 package option
 
 import (
+	"bytes"
 	"context"
+	stdjson "encoding/json"
+	"fmt"
 	"reflect"
 
 	C "github.com/sagernet/sing-box/constant"
@@ -69,6 +72,182 @@ func (h Outbound) DescribeSchema(builder schema.Builder) (*schema.Node, error) {
 			return nil, E.New("missing outbound options registry in context")
 		}
 		return registryUnion(builder, registry, []string{C.TypeShadowsocksR, C.TypeWireGuard}, true)
+	})
+}
+
+type DestinationStrategyOptionsWrapper interface {
+	TakeDestinationStrategy() *DestinationStrategy
+}
+
+type DestinationStrategyOptions struct {
+	DestinationStrategy *DestinationStrategy `json:"destination_strategy,omitempty"`
+}
+
+func (o *DestinationStrategyOptions) TakeDestinationStrategy() *DestinationStrategy {
+	return o.DestinationStrategy
+}
+
+type DestinationStrategy struct {
+	Strategy           string
+	OverrideWithDomain *OverrideWithDomainOptions
+}
+
+type OverrideWithDomainOptions struct {
+	Evaluator string `json:"evaluator" reference:"domain_evaluator"`
+	IPOnly    bool   `json:"ip_only,omitempty"`
+}
+
+type DomainEvaluatorOptions struct {
+	Tag    string `json:"tag"`
+	Server string `json:"server,omitempty" reference:"dns_server"`
+}
+
+func (o DomainEvaluatorOptions) DescribeSchema(builder schema.Builder) (*schema.Node, error) {
+	node := schema.StrictObject()
+	err := builder.FlattenStruct(node, reflect.TypeFor[DomainEvaluatorOptions]())
+	if err != nil {
+		return nil, err
+	}
+	node.Required = []string{"tag"}
+	return node, nil
+}
+
+func checkDomainEvaluators(evaluators []DomainEvaluatorOptions, outbounds []Outbound, endpoints []Endpoint) error {
+	evaluatorTags := make(map[string]bool, len(evaluators))
+	for index, evaluator := range evaluators {
+		if evaluator.Tag == "" {
+			return E.New("missing domain evaluator tag at index ", index)
+		}
+		if evaluatorTags[evaluator.Tag] {
+			return E.New("duplicate domain evaluator tag: ", evaluator.Tag)
+		}
+		evaluatorTags[evaluator.Tag] = true
+	}
+	validateStrategy := func(owner string, strategy *DestinationStrategy) error {
+		if strategy == nil || strategy.OverrideWithDomain == nil {
+			return nil
+		}
+		evaluatorTag := strategy.OverrideWithDomain.Evaluator
+		if evaluatorTag == "" {
+			return E.New(owner, " has override_with_domain without an evaluator")
+		}
+		if !evaluatorTags[evaluatorTag] {
+			return E.New(owner, " references unknown domain evaluator: ", evaluatorTag)
+		}
+		return nil
+	}
+	for index := range outbounds {
+		if err := validateStrategy(fmt.Sprint("outbound[", index, "]"), takeDestinationStrategy(outbounds[index].Options)); err != nil {
+			return err
+		}
+	}
+	for index := range endpoints {
+		if err := validateStrategy(fmt.Sprint("endpoint[", index, "]"), takeDestinationStrategy(endpoints[index].Options)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func takeDestinationStrategy(options any) *DestinationStrategy {
+	wrapper, loaded := options.(DestinationStrategyOptionsWrapper)
+	if !loaded {
+		return nil
+	}
+	return wrapper.TakeDestinationStrategy()
+}
+
+type rawDestinationStrategy struct {
+	Strategy           string                     `json:"strategy"`
+	OverrideWithDomain *OverrideWithDomainOptions `json:"override_with_domain,omitempty"`
+}
+
+func DefaultDestinationStrategy() DestinationStrategy {
+	return DestinationStrategy{Strategy: C.DestinationStrategyPreferDestinationAddresses}
+}
+
+func (s DestinationStrategy) EffectiveStrategy() string {
+	if s.Strategy == "" {
+		return C.DestinationStrategyPreferDestinationAddresses
+	}
+	return s.Strategy
+}
+
+func (s DestinationStrategy) MarshalJSON() ([]byte, error) {
+	strategy := s.EffectiveStrategy()
+	if s.OverrideWithDomain == nil {
+		return json.Marshal(strategy)
+	}
+	return json.Marshal(rawDestinationStrategy{
+		Strategy:           strategy,
+		OverrideWithDomain: s.OverrideWithDomain,
+	})
+}
+
+func (s *DestinationStrategy) UnmarshalJSON(content []byte) error {
+	var stringValue string
+	if err := json.Unmarshal(content, &stringValue); err == nil {
+		if err = validateDestinationStrategy(stringValue, nil); err != nil {
+			return err
+		}
+		s.Strategy = stringValue
+		s.OverrideWithDomain = nil
+		return nil
+	}
+	var raw rawDestinationStrategy
+	decoder := stdjson.NewDecoder(bytes.NewReader(content))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&raw); err != nil {
+		return err
+	}
+	if raw.Strategy == "" {
+		return E.New("missing destination strategy")
+	}
+	if err := validateDestinationStrategy(raw.Strategy, raw.OverrideWithDomain); err != nil {
+		return err
+	}
+	s.Strategy = raw.Strategy
+	s.OverrideWithDomain = raw.OverrideWithDomain
+	return nil
+}
+
+func validateDestinationStrategy(strategy string, overrideWithDomain *OverrideWithDomainOptions) error {
+	if overrideWithDomain != nil && overrideWithDomain.Evaluator == "" {
+		return E.New("missing override_with_domain.evaluator")
+	}
+	switch strategy {
+	case C.DestinationStrategyPreferDestinationAddresses:
+		if overrideWithDomain != nil {
+			return E.New("override_with_domain is only available with prefer_destination")
+		}
+	case C.DestinationStrategyPreferDestination:
+	default:
+		return E.New("unknown destination strategy: ", strategy)
+	}
+	return nil
+}
+
+func (s DestinationStrategy) DescribeSchema(builder schema.Builder) (*schema.Node, error) {
+	return builder.Define("DestinationStrategy", func() (*schema.Node, error) {
+		overrideObject := schema.StrictObject()
+		overrideObject.Properties.Put("evaluator", schema.TagReferenceNode("domain_evaluator"))
+		overrideObject.Properties.Put("ip_only", schema.BooleanNode())
+		overrideObject.Required = []string{"evaluator"}
+		preferAddressesObject := schema.StrictObject()
+		preferAddressesObject.Properties.Put("strategy", schema.StringConst(C.DestinationStrategyPreferDestinationAddresses))
+		preferAddressesObject.Required = []string{"strategy"}
+		preferDestinationObject := schema.StrictObject()
+		preferDestinationObject.Properties.Put("strategy", schema.StringConst(C.DestinationStrategyPreferDestination))
+		preferDestinationObject.Properties.Put("override_with_domain", schema.AnyOf(overrideObject, &schema.Node{Type: "null"}))
+		preferDestinationObject.Required = []string{"strategy"}
+		return schema.AnyOf(
+			schema.StringEnum(
+				C.DestinationStrategyPreferDestinationAddresses,
+				C.DestinationStrategyPreferDestination,
+			),
+			preferAddressesObject,
+			preferDestinationObject,
+		), nil
 	})
 }
 

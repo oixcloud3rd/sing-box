@@ -47,6 +47,7 @@ icon: material/new-box
   "taildrop_directory": "",
 
   ... // 拨号字段
+  ... // 目标策略字段
 }
 ```
 
@@ -229,6 +230,10 @@ UDP NAT 过期时间。
     Tailscale 端点中的拨号字段仅控制它如何连接到控制平面，与实际连接无关。
 
 参阅 [拨号字段](/zh/configuration/shared/dial/) 了解详情。
+
+### 目标策略字段
+
+参阅[目标策略字段](/zh/configuration/shared/destination-strategy/)了解详情。
 
 ### 交互式认证
 

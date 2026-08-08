@@ -9,6 +9,7 @@ import (
 	"github.com/sagernet/sing-box/common/taskmonitor"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
+	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 )
@@ -16,20 +17,22 @@ import (
 var _ adapter.EndpointManager = (*Manager)(nil)
 
 type Manager struct {
-	logger        log.ContextLogger
-	registry      adapter.EndpointRegistry
-	access        sync.Mutex
-	started       bool
-	stage         adapter.StartStage
-	endpoints     []adapter.Endpoint
-	endpointByTag map[string]adapter.Endpoint
+	logger                log.ContextLogger
+	registry              adapter.EndpointRegistry
+	access                sync.Mutex
+	started               bool
+	stage                 adapter.StartStage
+	endpoints             []adapter.Endpoint
+	endpointByTag         map[string]adapter.Endpoint
+	destinationStrategies map[adapter.Outbound]option.DestinationStrategy
 }
 
 func NewManager(logger log.ContextLogger, registry adapter.EndpointRegistry) *Manager {
 	return &Manager{
-		logger:        logger,
-		registry:      registry,
-		endpointByTag: make(map[string]adapter.Endpoint),
+		logger:                logger,
+		registry:              registry,
+		endpointByTag:         make(map[string]adapter.Endpoint),
+		destinationStrategies: make(map[adapter.Outbound]option.DestinationStrategy),
 	}
 }
 
@@ -94,6 +97,16 @@ func (m *Manager) Get(tag string) (adapter.Endpoint, bool) {
 	return endpoint, found
 }
 
+func (m *Manager) ConnectionDialer(outbound adapter.Outbound) adapter.ConnectionDialer {
+	m.access.Lock()
+	strategy, loaded := m.destinationStrategies[outbound]
+	m.access.Unlock()
+	if !loaded {
+		strategy = option.DefaultDestinationStrategy()
+	}
+	return adapter.ConnectionDialer{Dialer: outbound, DestinationStrategy: strategy}
+}
+
 func (m *Manager) Remove(tag string) error {
 	m.access.Lock()
 	endpoint, found := m.endpointByTag[tag]
@@ -102,6 +115,7 @@ func (m *Manager) Remove(tag string) error {
 		return os.ErrInvalid
 	}
 	delete(m.endpointByTag, tag)
+	delete(m.destinationStrategies, endpoint)
 	index := common.Index(m.endpoints, func(it adapter.Endpoint) bool {
 		return it == endpoint
 	})
@@ -121,6 +135,10 @@ func (m *Manager) Create(ctx context.Context, router adapter.Router, logger log.
 	endpoint, err := m.registry.Create(ctx, router, logger, tag, outboundType, options)
 	if err != nil {
 		return err
+	}
+	destinationStrategy := option.DefaultDestinationStrategy()
+	if destinationOptions, loaded := options.(option.DestinationStrategyOptionsWrapper); loaded && destinationOptions.TakeDestinationStrategy() != nil {
+		destinationStrategy = *destinationOptions.TakeDestinationStrategy()
 	}
 	m.access.Lock()
 	defer m.access.Unlock()
@@ -149,8 +167,10 @@ func (m *Manager) Create(ctx context.Context, router adapter.Router, logger log.
 			panic("invalid endpoint index")
 		}
 		m.endpoints = append(m.endpoints[:existsIndex], m.endpoints[existsIndex+1:]...)
+		delete(m.destinationStrategies, existsEndpoint)
 	}
 	m.endpoints = append(m.endpoints, endpoint)
 	m.endpointByTag[tag] = endpoint
+	m.destinationStrategies[endpoint] = destinationStrategy
 	return nil
 }

@@ -23,6 +23,7 @@ type EndpointManager interface {
 	Lifecycle
 	Endpoints() []Endpoint
 	Get(tag string) (Endpoint, bool)
+	ConnectionDialer(outbound Outbound) ConnectionDialer
 	Remove(tag string) error
 	Create(ctx context.Context, router Router, logger log.ContextLogger, tag string, endpointType string, options any) error
 }

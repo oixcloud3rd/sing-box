@@ -128,6 +128,7 @@ func (s *Selector) SelectOutbound(tag string) bool {
 	if s.selected.Swap(detour) == detour {
 		return true
 	}
+	s.interruptGroup.Interrupt(s.interruptExternalConnections)
 	if s.Tag() != "" {
 		cacheFile := service.FromContext[adapter.CacheFile](s.ctx)
 		if cacheFile != nil {
@@ -137,7 +138,6 @@ func (s *Selector) SelectOutbound(tag string) bool {
 			}
 		}
 	}
-	s.interruptGroup.Interrupt(s.interruptExternalConnections)
 	if s.history != nil {
 		s.history.NotifyUpdated()
 	}
@@ -162,22 +162,51 @@ func (s *Selector) ListenPacket(ctx context.Context, destination M.Socksaddr) (n
 
 func (s *Selector) NewConnection(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
 	ctx = interrupt.ContextWithIsExternalConnection(ctx)
-	selected := s.selected.Load()
-	if outboundHandler, isHandler := selected.(adapter.ConnectionHandler); isHandler {
-		outboundHandler.NewConnection(ctx, conn, metadata, onClose)
-	} else {
-		s.connection.NewConnection(ctx, selected, conn, metadata, onClose)
+	boundOutbound, err := s.bindConnection(N.NetworkTCP)
+	if err != nil {
+		N.CloseOnHandshakeFailure(conn, onClose, err)
+		s.logger.ErrorContext(ctx, err)
+		return
 	}
+	s.connection.NewConnection(ctx, boundOutbound, conn, metadata, onClose)
 }
 
 func (s *Selector) NewPacketConnection(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
 	ctx = interrupt.ContextWithIsExternalConnection(ctx)
-	selected := s.selected.Load()
-	if outboundHandler, isHandler := selected.(adapter.PacketConnectionHandler); isHandler {
-		outboundHandler.NewPacketConnection(ctx, conn, metadata, onClose)
-	} else {
-		s.connection.NewPacketConnection(ctx, selected, conn, metadata, onClose)
+	boundOutbound, err := s.bindConnection(N.NetworkUDP)
+	if err != nil {
+		N.CloseOnHandshakeFailure(conn, onClose, err)
+		s.logger.ErrorContext(ctx, err)
+		return
 	}
+	s.connection.NewPacketConnection(ctx, boundOutbound, conn, metadata, onClose)
+}
+
+func (s *Selector) bindConnection(network string) (adapter.ConnectionDialer, error) {
+	return s.bindConnectionWithMode(network, connectionBindModeHandler)
+}
+
+func (s *Selector) bindConnectionWithMode(network string, mode connectionBindMode) (adapter.ConnectionDialer, error) {
+	generation := s.interruptGroup.Generation()
+	selected := s.selected.Load()
+	if selected == nil {
+		return adapter.ConnectionDialer{}, E.New("missing selected outbound")
+	}
+	boundDialer, err := bindConnectionOutbound(s.outbound, selected, network, mode)
+	if err != nil {
+		return adapter.ConnectionDialer{}, err
+	}
+	boundOutbound, loaded := boundDialer.Dialer.(adapter.Outbound)
+	if !loaded {
+		return adapter.ConnectionDialer{}, E.New("bound selector dialer is not an outbound")
+	}
+	boundDialer.Dialer = &boundSelectorOutbound{
+		Outbound:   boundOutbound,
+		selector:   s,
+		generation: generation,
+		interrupt:  mode == connectionBindModeDial,
+	}
+	return boundDialer, nil
 }
 
 func RealTag(detour adapter.Outbound) string {

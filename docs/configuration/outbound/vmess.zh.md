@@ -19,6 +19,7 @@
   "transport": {},
 
   ... // 拨号字段
+  ... // 目标策略字段
 }
 ```
 
@@ -105,3 +106,7 @@ V2Ray 传输配置，参阅 [V2Ray 传输层](/zh/configuration/shared/v2ray-tra
 ### 拨号字段
 
 参阅 [拨号字段](/zh/configuration/shared/dial/)。
+
+### 目标策略字段
+
+参阅[目标策略字段](/zh/configuration/shared/destination-strategy/)。

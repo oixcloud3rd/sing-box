@@ -37,6 +37,8 @@ type DNSQueryOptions struct {
 	Transport              DNSTransport
 	Strategy               C.DomainStrategy
 	LookupStrategy         C.DomainStrategy
+	CacheOnly              bool
+	Quiet                  bool
 	DisableCache           bool
 	DisableOptimisticCache bool
 	RewriteTTL             *uint32

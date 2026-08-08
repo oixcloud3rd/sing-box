@@ -104,6 +104,7 @@
   ... // UDP NAT 字段
 
   ... // 拨号字段
+  ... // 目标策略字段
 }
 ```
 
@@ -706,6 +707,10 @@ OpenVPN 接口 MTU。
 ## 拨号字段
 
 参阅[拨号字段](/zh/configuration/shared/dial/)。
+
+## 目标策略字段
+
+参阅[目标策略字段](/zh/configuration/shared/destination-strategy/)。
 
 ## 交互式认证
 

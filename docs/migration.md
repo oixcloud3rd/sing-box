@@ -4,6 +4,36 @@ icon: material/arrange-bring-forward
 
 ## 1.14.0
 
+### Migrate route domain override to destination strategy
+
+The route action field `override_address_with_domain` has been removed. Domain override is now a property of the final leaf outbound or endpoint, so a Selector or URLTest switch cannot combine one leaf's decision with another leaf's dialer.
+
+Define a top-level [Domain Evaluator](/configuration/shared/domain-evaluator/) and reference it from the leaf's [Destination Strategy](/configuration/shared/destination-strategy/):
+
+```json
+{
+  "domain_evaluators": [
+    {
+      "tag": "dns-check"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct",
+      "destination_strategy": {
+        "strategy": "prefer_destination",
+        "override_with_domain": {
+          "evaluator": "dns-check"
+        }
+      }
+    }
+  ]
+}
+```
+
+The evaluator tag is mandatory when domain override is enabled. Omitting `server` selects the DNS server through DNS rules. Evaluation is non-blocking: cache misses use the original destination for the current connection and warm the DNS cache in the background.
+
 ### Migrate inline ACME to certificate provider
 
 Inline ACME options in TLS are deprecated and can be replaced by certificate providers.

@@ -16,6 +16,7 @@ type VMessUser struct {
 
 type VMessOutboundOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	ServerOptions
 	UUID                string      `json:"uuid"`
 	Security            string      `json:"security" enum:"auto,none,zero,aes-128-cfb,aes-128-gcm,chacha20-poly1305"`
