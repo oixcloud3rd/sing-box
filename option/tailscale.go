@@ -14,6 +14,7 @@ import (
 
 type TailscaleEndpointOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	StateDirectory             string                     `json:"state_directory,omitempty"`
 	AuthKey                    string                     `json:"auth_key,omitempty"`
 	ControlURL                 string                     `json:"control_url,omitempty"`

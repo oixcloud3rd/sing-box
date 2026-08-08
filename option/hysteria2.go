@@ -201,6 +201,7 @@ type Hysteria2MasqueradeString struct {
 
 type Hysteria2OutboundOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	ServerOptions
 	ServerPorts    badoption.Listable[string] `json:"server_ports,omitempty"`
 	HopInterval    badoption.Duration         `json:"hop_interval,omitempty"`

@@ -17,6 +17,7 @@ type TrojanUser struct {
 
 type TrojanOutboundOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	ServerOptions
 	Password string      `json:"password"`
 	Network  NetworkList `json:"network,omitempty"`

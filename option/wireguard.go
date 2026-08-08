@@ -20,6 +20,7 @@ type WireGuardEndpointOptions struct {
 	UDPNATMax    uint32                           `json:"udp_nat_max,omitempty"`
 	Workers      int                              `json:"workers,omitempty"`
 	DialerOptions
+	DestinationStrategyOptions
 }
 
 type WireGuardPeer struct {

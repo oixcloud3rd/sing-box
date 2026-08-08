@@ -109,6 +109,7 @@
   ],
 
   ... // 拨号字段
+  ... // 目标策略字段
 }
 ```
 
@@ -641,6 +642,10 @@ MCA 证书和私钥必须同时设置或同时为空。
 ## 拨号字段
 
 参阅[拨号字段](/zh/configuration/shared/dial/)了解详情。
+
+## 目标策略字段
+
+参阅[目标策略字段](/zh/configuration/shared/destination-strategy/)了解详情。
 
 ## 交互式认证
 

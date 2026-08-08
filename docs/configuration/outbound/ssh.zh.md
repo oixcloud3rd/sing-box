@@ -28,6 +28,7 @@
   "kex_algorithm": [],
 
   ... // 拨号字段
+  ... // 目标策略字段
 }
 ```
 
@@ -96,3 +97,7 @@ SSH 用户, 默认使用 root。
 ### 拨号字段
 
 参阅 [拨号字段](/zh/configuration/shared/dial/)。
+
+### 目标策略字段
+
+参阅[目标策略字段](/zh/configuration/shared/destination-strategy/)。

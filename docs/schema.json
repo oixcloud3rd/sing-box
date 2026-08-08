@@ -90,6 +90,25 @@
         "$ref": "#/$defs/NetworkNamespace"
       }
     },
+    "domain_evaluators": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string"
+          },
+          "server": {
+            "type": "string",
+            "x-tag-reference": "dns_server"
+          }
+        },
+        "required": [
+          "tag"
+        ],
+        "additionalProperties": false
+      }
+    },
     "endpoints": {
       "type": "array",
       "items": {
@@ -3245,6 +3264,64 @@
       },
       "additionalProperties": false
     },
+    "DestinationStrategy": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "prefer_destination_addresses",
+            "prefer_destination"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "strategy": {
+              "const": "prefer_destination_addresses"
+            }
+          },
+          "required": [
+            "strategy"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "strategy": {
+              "const": "prefer_destination"
+            },
+            "override_with_domain": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "evaluator": {
+                      "type": "string",
+                      "x-tag-reference": "domain_evaluator"
+                    },
+                    "ip_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "evaluator"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "strategy"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
     "DialerOptions": {
       "type": "object",
       "properties": {
@@ -3515,6 +3592,9 @@
             },
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
+            },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
             },
             "system": {
               "type": "boolean"
@@ -3792,6 +3872,9 @@
             },
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
+            },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
             },
             "server": {
               "type": "string"
@@ -4481,6 +4564,9 @@
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
             },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
+            },
             "state_directory": {
               "type": "string"
             },
@@ -4757,6 +4843,9 @@
             },
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
+            },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
             }
           },
           "required": [
@@ -10816,6 +10905,9 @@
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
             },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
+            },
             "server": {
               "type": "string"
             },
@@ -10856,6 +10948,9 @@
             },
             "tag": {
               "type": "string"
+            },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
             }
           },
           "required": [
@@ -10871,6 +10966,9 @@
             },
             "tag": {
               "type": "string"
+            },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
             },
             "interface": {
               "type": "string"
@@ -10997,6 +11095,9 @@
             },
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
+            },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
             }
           },
           "required": [
@@ -11111,6 +11212,9 @@
             },
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
+            },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
             },
             "server": {
               "type": "string"
@@ -11248,6 +11352,9 @@
             },
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
+            },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
             },
             "server": {
               "type": "string"
@@ -11496,6 +11603,9 @@
             },
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
+            },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
             },
             "server": {
               "type": "string"
@@ -11765,6 +11875,9 @@
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
             },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
+            },
             "server": {
               "type": "string"
             },
@@ -11990,6 +12103,9 @@
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
             },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
+            },
             "server": {
               "type": "string"
             },
@@ -12193,6 +12309,9 @@
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
             },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
+            },
             "server": {
               "type": "string"
             },
@@ -12333,6 +12452,9 @@
                 },
                 "fallback_delay": {
                   "$ref": "#/$defs/Duration"
+                },
+                "destination_strategy": {
+                  "$ref": "#/$defs/DestinationStrategy"
                 },
                 "server": {
                   "type": "string"
@@ -12521,6 +12643,9 @@
                 "fallback_delay": {
                   "$ref": "#/$defs/Duration"
                 },
+                "destination_strategy": {
+                  "$ref": "#/$defs/DestinationStrategy"
+                },
                 "server": {
                   "type": "string"
                 },
@@ -12704,6 +12829,9 @@
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
             },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
+            },
             "server": {
               "type": "string"
             },
@@ -12885,6 +13013,9 @@
             },
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
+            },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
             },
             "server": {
               "type": "string"
@@ -13101,6 +13232,9 @@
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
             },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
+            },
             "executable_path": {
               "type": "string"
             },
@@ -13232,6 +13366,9 @@
             },
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
+            },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
             },
             "server": {
               "type": "string"
@@ -13387,6 +13524,9 @@
             },
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
+            },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
             },
             "server": {
               "type": "string"
@@ -13640,6 +13780,9 @@
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
             },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
+            },
             "server": {
               "type": "string"
             },
@@ -13800,6 +13943,9 @@
             },
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
+            },
+            "destination_strategy": {
+              "$ref": "#/$defs/DestinationStrategy"
             },
             "server": {
               "type": "string"

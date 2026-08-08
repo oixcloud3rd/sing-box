@@ -16,6 +16,7 @@ type DirectInboundOptions struct {
 
 type _DirectOutboundOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	// Deprecated: Use Route Action instead
 	OverrideAddress string `json:"override_address,omitempty" schema:"omit"`
 	// Deprecated: Use Route Action instead

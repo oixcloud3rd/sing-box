@@ -26,6 +26,7 @@ icon: material/new-box
   "tls": {},
 
   ... // 拨号字段
+  ... // 目标策略字段
 }
 ```
 
@@ -187,3 +188,7 @@ raw Snell v4，不能与 `obfs_mode` 组合使用，且服务端必须实际接�
 ### 拨号字段
 
 参阅 [拨号字段](/zh/configuration/shared/dial/)。
+
+### 目标策略字段
+
+参阅[目标策略字段](/zh/configuration/shared/destination-strategy/)。

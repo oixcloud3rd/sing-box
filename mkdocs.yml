@@ -127,6 +127,8 @@ nav:
       - Shared:
           - Listen Fields: configuration/shared/listen.md
           - Dial Fields: configuration/shared/dial.md
+          - Destination Strategy Fields: configuration/shared/destination-strategy.md
+          - Domain Evaluator: configuration/shared/domain-evaluator.md
           - TLS: configuration/shared/tls.md
           - HTTP Client: configuration/shared/http-client.md
           - HTTP2 Fields: configuration/shared/http2.md

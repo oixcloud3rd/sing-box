@@ -18,6 +18,7 @@ type OpenVPNEndpointOptions struct {
 
 type OpenVPNClientEndpointOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	ServerOptions
 	OpenVPNEndpointOptions
 	Mode                 string                           `json:"mode,omitempty" enum:"tls,static_key"`

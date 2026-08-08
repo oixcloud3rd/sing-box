@@ -11,6 +11,7 @@ import (
 	"github.com/sagernet/sing-box/common/taskmonitor"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
+	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/logger"
@@ -28,6 +29,7 @@ type Manager struct {
 	stage                   adapter.StartStage
 	outbounds               []adapter.Outbound
 	outboundByTag           map[string]adapter.Outbound
+	destinationStrategies   map[adapter.Outbound]option.DestinationStrategy
 	dependByTag             map[string][]string
 	defaultOutbound         adapter.Outbound
 	defaultOutboundFallback func() (adapter.Outbound, error)
@@ -35,12 +37,13 @@ type Manager struct {
 
 func NewManager(logger logger.ContextLogger, registry adapter.OutboundRegistry, endpoint adapter.EndpointManager, defaultTag string) *Manager {
 	return &Manager{
-		logger:        logger,
-		registry:      registry,
-		endpoint:      endpoint,
-		defaultTag:    defaultTag,
-		outboundByTag: make(map[string]adapter.Outbound),
-		dependByTag:   make(map[string][]string),
+		logger:                logger,
+		registry:              registry,
+		endpoint:              endpoint,
+		defaultTag:            defaultTag,
+		outboundByTag:         make(map[string]adapter.Outbound),
+		destinationStrategies: make(map[adapter.Outbound]option.DestinationStrategy),
+		dependByTag:           make(map[string][]string),
 	}
 }
 
@@ -72,6 +75,7 @@ func (m *Manager) Start(stage adapter.StartStage) error {
 			}
 			m.outbounds = append(m.outbounds, directOutbound)
 			m.outboundByTag[directOutbound.Tag()] = directOutbound
+			m.destinationStrategies[directOutbound] = option.DefaultDestinationStrategy()
 			m.defaultOutbound = directOutbound
 		}
 		outbounds := m.outbounds
@@ -214,6 +218,19 @@ func (m *Manager) Default() adapter.Outbound {
 	return m.defaultOutbound
 }
 
+func (m *Manager) ConnectionDialer(outbound adapter.Outbound) adapter.ConnectionDialer {
+	m.access.RLock()
+	strategy, loaded := m.destinationStrategies[outbound]
+	m.access.RUnlock()
+	if loaded {
+		return adapter.ConnectionDialer{Dialer: outbound, DestinationStrategy: strategy}
+	}
+	if m.endpoint != nil {
+		return m.endpoint.ConnectionDialer(outbound)
+	}
+	return adapter.ConnectionDialer{Dialer: outbound, DestinationStrategy: option.DefaultDestinationStrategy()}
+}
+
 func (m *Manager) Remove(tag string) error {
 	m.access.Lock()
 	defer m.access.Unlock()
@@ -222,6 +239,7 @@ func (m *Manager) Remove(tag string) error {
 		return os.ErrInvalid
 	}
 	delete(m.outboundByTag, tag)
+	delete(m.destinationStrategies, outbound)
 	index := common.Index(m.outbounds, func(it adapter.Outbound) bool {
 		return it == outbound
 	})
@@ -266,6 +284,10 @@ func (m *Manager) Create(ctx context.Context, router adapter.Router, logger log.
 	if err != nil {
 		return err
 	}
+	destinationStrategy := option.DefaultDestinationStrategy()
+	if destinationOptions, loaded := options.(option.DestinationStrategyOptionsWrapper); loaded && destinationOptions.TakeDestinationStrategy() != nil {
+		destinationStrategy = *destinationOptions.TakeDestinationStrategy()
+	}
 	if m.started {
 		name := "outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
 		for _, stage := range adapter.ListStartStages {
@@ -293,9 +315,11 @@ func (m *Manager) Create(ctx context.Context, router adapter.Router, logger log.
 			panic("invalid inbound index")
 		}
 		m.outbounds = append(m.outbounds[:existsIndex], m.outbounds[existsIndex+1:]...)
+		delete(m.destinationStrategies, existsOutbound)
 	}
 	m.outbounds = append(m.outbounds, outbound)
 	m.outboundByTag[tag] = outbound
+	m.destinationStrategies[outbound] = destinationStrategy
 	dependencies := outbound.Dependencies()
 	for _, dependency := range dependencies {
 		m.dependByTag[dependency] = append(m.dependByTag[dependency], tag)

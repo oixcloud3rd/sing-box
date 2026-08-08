@@ -1,6 +1,7 @@
 package option
 
 type BridgeOutboundOptions struct {
+	DestinationStrategyOptions
 	Interface          string `json:"interface,omitempty"`
 	BridgeName         string `json:"bridge_name,omitempty"`
 	IPRoute2TableIndex int    `json:"iproute2_table_index,omitempty"`

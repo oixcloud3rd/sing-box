@@ -169,7 +169,7 @@ func (r *Router) routeConnection(ctx context.Context, conn net.Conn, metadata ad
 	if outboundHandler, isHandler := selectedOutbound.(adapter.ConnectionHandler); isHandler {
 		outboundHandler.NewConnection(ctx, conn, metadata, onClose)
 	} else {
-		r.connection.NewConnection(ctx, selectedOutbound, conn, metadata, onClose)
+		r.connection.NewConnection(ctx, r.outbound.ConnectionDialer(selectedOutbound), conn, metadata, onClose)
 	}
 	return nil
 }
@@ -300,7 +300,7 @@ func (r *Router) routePacketConnection(ctx context.Context, conn N.PacketConn, m
 	if outboundHandler, isHandler := selectedOutbound.(adapter.PacketConnectionHandler); isHandler {
 		outboundHandler.NewPacketConnection(ctx, conn, metadata, onClose)
 	} else {
-		r.connection.NewPacketConnection(ctx, selectedOutbound, conn, metadata, onClose)
+		r.connection.NewPacketConnection(ctx, r.outbound.ConnectionDialer(selectedOutbound), conn, metadata, onClose)
 	}
 	return nil
 }
@@ -355,13 +355,6 @@ func (r *Router) PreMatch(metadata adapter.InboundContext, firstPacket []byte) a
 				}
 				continue
 			}
-			//goland:noinspection GoDeprecation
-			if action.OverrideDestination && M.IsDomainName(metadata.Domain) {
-				metadata.Destination = M.Socksaddr{
-					Fqdn: metadata.Domain,
-					Port: metadata.Destination.Port,
-				}
-			}
 			if metadata.Domain != "" && metadata.Client != "" {
 				r.logger.DebugContext(ctx, "sniffed packet protocol: ", metadata.Protocol, ", domain: ", metadata.Domain, ", client: ", metadata.Client)
 			} else if metadata.Domain != "" {
@@ -411,6 +404,7 @@ func (r *Router) PreMatch(metadata adapter.InboundContext, firstPacket []byte) a
 
 func applyRouteOptionsOverride(metadata *adapter.InboundContext, routeOptions *R.RuleActionRouteOptions) {
 	if routeOptions.OverrideAddress.IsValid() {
+		metadata.RouteOverrideAddressSet = true
 		metadata.Destination = M.Socksaddr{
 			Addr: routeOptions.OverrideAddress.Addr,
 			Port: metadata.Destination.Port,
@@ -731,13 +725,6 @@ func (r *Router) actionSniff(
 		metadata.SnifferNames = action.SnifferNames
 		metadata.SniffError = err
 		if err == nil {
-			//goland:noinspection GoDeprecation
-			if action.OverrideDestination && M.IsDomainName(metadata.Domain) {
-				metadata.Destination = M.Socksaddr{
-					Fqdn: metadata.Domain,
-					Port: metadata.Destination.Port,
-				}
-			}
 			if metadata.Domain != "" && metadata.Client != "" {
 				r.logger.DebugContext(ctx, "sniffed protocol: ", metadata.Protocol, ", domain: ", metadata.Domain, ", client: ", metadata.Client)
 			} else if metadata.Domain != "" {
@@ -855,13 +842,6 @@ func (r *Router) actionSniff(
 		}
 	finally:
 		if err == nil {
-			//goland:noinspection GoDeprecation
-			if action.OverrideDestination && M.IsDomainName(metadata.Domain) {
-				metadata.Destination = M.Socksaddr{
-					Fqdn: metadata.Domain,
-					Port: metadata.Destination.Port,
-				}
-			}
 			if metadata.Domain != "" && metadata.Client != "" {
 				r.logger.DebugContext(ctx, "sniffed packet protocol: ", metadata.Protocol, ", domain: ", metadata.Domain, ", client: ", metadata.Client)
 			} else if metadata.Domain != "" {

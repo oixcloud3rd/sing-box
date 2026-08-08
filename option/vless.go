@@ -16,6 +16,7 @@ type VLESSUser struct {
 
 type VLESSOutboundOptions struct {
 	DialerOptions
+	DestinationStrategyOptions
 	ServerOptions
 	UUID    string      `json:"uuid"`
 	Flow    string      `json:"flow,omitempty"`

@@ -26,6 +26,7 @@ icon: material/new-box
   "tls": {},
 
   ... // Dial Fields
+  ... // Destination Strategy Fields
 }
 ```
 
@@ -189,3 +190,7 @@ Traffic shaping mode, one of `default` `unshaped` `unsafe-raw`.
 ### Dial Fields
 
 See [Dial Fields](/configuration/shared/dial/) for details.
+
+### Destination Strategy Fields
+
+See [Destination Strategy Fields](/configuration/shared/destination-strategy/) for details.

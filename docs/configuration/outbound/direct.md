@@ -20,6 +20,7 @@ icon: material/alert-decagram
   "override_port": 53,
   
   ... // Dial Fields
+  ... // Destination Strategy Fields
 }
 ```
 
@@ -46,3 +47,7 @@ Protocol value can be `1` or `2`.
 ### Dial Fields
 
 See [Dial Fields](/configuration/shared/dial/) for details.
+
+### Destination Strategy Fields
+
+See [Destination Strategy Fields](/configuration/shared/destination-strategy/) for details.

@@ -33,6 +33,8 @@ cannot be routed.
   "type": "bridge",
   "tag": "bridge-out",
 
+  ... // Destination Strategy Fields
+
   "interface": "",
   "bridge_name": "",
   "iproute2_table_index": 0,
@@ -75,3 +77,7 @@ Linux iproute2 table index for pinned egress routes.
 Linux iproute2 rule start index.
 
 `100` is used by default.
+
+### Destination Strategy Fields
+
+See [Destination Strategy Fields](/configuration/shared/destination-strategy/) for details.

@@ -4,6 +4,36 @@ icon: material/arrange-bring-forward
 
 ## 1.14.0
 
+### 将路由域名覆盖迁移到目标策略
+
+路由动作字段 `override_address_with_domain` 已移除。域名覆盖现在属于最终叶子出站或端点，因此 Selector 或 URLTest 切换不会把一个叶子的决策与另一个叶子的拨号器组合起来。
+
+定义顶层[域名评估器](/zh/configuration/shared/domain-evaluator/)，并在叶子的[目标策略](/zh/configuration/shared/destination-strategy/)中引用：
+
+```json
+{
+  "domain_evaluators": [
+    {
+      "tag": "dns-check"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct",
+      "destination_strategy": {
+        "strategy": "prefer_destination",
+        "override_with_domain": {
+          "evaluator": "dns-check"
+        }
+      }
+    }
+  ]
+}
+```
+
+启用域名覆盖时必须显式指定评估器标签。省略 `server` 时由 DNS 规则选择服务器。评估不会阻塞：缓存未命中时当前连接使用原目标，并在后台预热 DNS 缓存。
+
 ### 迁移内联 ACME 到证书提供者
 
 TLS 中的内联 ACME 选项已废弃，且可以被证书提供者替代。

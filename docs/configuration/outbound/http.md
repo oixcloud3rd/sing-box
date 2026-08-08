@@ -16,6 +16,7 @@
   "tls": {},
   
   ... // Dial Fields
+  ... // Destination Strategy Fields
 }
 ```
 
@@ -56,3 +57,7 @@ TLS configuration, see [TLS](/configuration/shared/tls/#outbound).
 ### Dial Fields
 
 See [Dial Fields](/configuration/shared/dial/) for details.
+
+### Destination Strategy Fields
+
+See [Destination Strategy Fields](/configuration/shared/destination-strategy/) for details.
