@@ -40,6 +40,8 @@ type UTLSClientConfig struct {
 	spoof                 string
 	spoofMethod           tlsspoof.Method
 	snellECH              bool
+	uClientSessionCache   utls.ClientSessionCache
+	disableRenegotiation  bool
 }
 
 func (c *UTLSClientConfig) ServerName() string {
@@ -92,11 +94,15 @@ func (c *UTLSClientConfig) Client(conn net.Conn) (Conn, error) {
 		return nil, err
 	}
 	uConfig := c.config.Clone()
+	if c.uClientSessionCache != nil {
+		uConfig.ClientSessionCache = c.uClientSessionCache
+	}
 	uConn := utls.UClient(conn, uConfig, c.id)
 	return &utlsALPNWrapper{
-		utlsConnWrapper: utlsConnWrapper{uConn},
-		nextProtocols:   c.config.NextProtos,
-		snellECH:        c.snellECH,
+		utlsConnWrapper:      utlsConnWrapper{uConn},
+		nextProtocols:        c.config.NextProtos,
+		snellECH:             c.snellECH,
+		disableRenegotiation: c.disableRenegotiation,
 	}, nil
 }
 
@@ -119,6 +125,8 @@ func (c *UTLSClientConfig) Clone() Config {
 		spoof:                 c.spoof,
 		spoofMethod:           c.spoofMethod,
 		snellECH:              c.snellECH,
+		uClientSessionCache:   c.uClientSessionCache,
+		disableRenegotiation:  c.disableRenegotiation,
 	}
 	cloned.SetServerName(cloned.serverName)
 	return cloned
@@ -133,10 +141,12 @@ func (c *UTLSClientConfig) SetECHConfigList(EncryptedClientHelloConfigList []byt
 }
 
 func (c *UTLSClientConfig) configureSnellECH() {
-	c.config.ClientSessionCache = utls.NewLRUClientSessionCache(SnellECHSessionCacheCapacity)
+	c.uClientSessionCache = utls.NewLRUClientSessionCache(SnellECHSessionCacheCapacity)
+	c.config.ClientSessionCache = c.uClientSessionCache
 	c.config.Renegotiation = utls.RenegotiateNever
 	c.config.OmitEmptyPsk = true
 	c.snellECH = true
+	c.disableRenegotiation = true
 }
 
 type utlsConnWrapper struct {
@@ -182,36 +192,14 @@ func (c *utlsConnWrapper) WriterReplaceable() bool {
 
 type utlsALPNWrapper struct {
 	utlsConnWrapper
-	nextProtocols []string
-	snellECH      bool
+	nextProtocols        []string
+	snellECH             bool
+	disableRenegotiation bool
 }
 
 func (c *utlsALPNWrapper) HandshakeContext(ctx context.Context) error {
-	if c.snellECH {
-		err := c.BuildHandshakeState()
-		if err != nil {
-			return err
-		}
-		foundALPN := false
-		extensions := c.Extensions[:0]
-		for _, extension := range c.Extensions {
-			if alpnExtension, isALPN := extension.(*utls.ALPNExtension); isALPN {
-				foundALPN = true
-				if len(c.nextProtocols) == 0 {
-					continue
-				}
-				alpnExtension.AlpnProtocols = c.nextProtocols
-			}
-			if renegotiationExtension, isRenegotiation := extension.(*utls.RenegotiationInfoExtension); isRenegotiation {
-				renegotiationExtension.Renegotiation = utls.RenegotiateNever
-			}
-			extensions = append(extensions, extension)
-		}
-		if len(c.nextProtocols) > 0 && !foundALPN {
-			extensions = append(extensions, &utls.ALPNExtension{AlpnProtocols: c.nextProtocols})
-		}
-		c.Extensions = extensions
-		if err = c.BuildHandshakeState(); err != nil {
+	if c.snellECH || c.disableRenegotiation {
+		if err := c.prepareHandshakeState(); err != nil {
 			return err
 		}
 		return c.UConn.HandshakeContext(ctx)
@@ -240,6 +228,35 @@ func (c *utlsALPNWrapper) HandshakeContext(ctx context.Context) error {
 		}
 	}
 	return c.UConn.HandshakeContext(ctx)
+}
+
+func (c *utlsALPNWrapper) prepareHandshakeState() error {
+	if err := c.BuildHandshakeState(); err != nil {
+		return err
+	}
+	foundALPN := false
+	extensions := c.Extensions[:0]
+	for _, extension := range c.Extensions {
+		if alpnExtension, isALPN := extension.(*utls.ALPNExtension); isALPN {
+			foundALPN = true
+			if len(c.nextProtocols) == 0 {
+				if c.snellECH {
+					continue
+				}
+			} else {
+				alpnExtension.AlpnProtocols = c.nextProtocols
+			}
+		}
+		if renegotiationExtension, isRenegotiation := extension.(*utls.RenegotiationInfoExtension); isRenegotiation && c.disableRenegotiation {
+			renegotiationExtension.Renegotiation = utls.RenegotiateNever
+		}
+		extensions = append(extensions, extension)
+	}
+	if len(c.nextProtocols) > 0 && !foundALPN {
+		extensions = append(extensions, &utls.ALPNExtension{AlpnProtocols: c.nextProtocols})
+	}
+	c.Extensions = extensions
+	return c.BuildHandshakeState()
 }
 
 func NewUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddress string, options option.OutboundTLSOptions) (Config, error) {
