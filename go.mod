@@ -82,7 +82,7 @@ require (
 	howett.net/plist v1.0.1
 )
 
-replace github.com/sagernet/sing-snell => github.com/oixcloud3rd/sing-snell v0.0.0-20260806061941-924f2fe9981d
+replace github.com/sagernet/sing-snell => github.com/oixcloud3rd/sing-snell v0.0.0-20260831075042-aae777dc471c
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect

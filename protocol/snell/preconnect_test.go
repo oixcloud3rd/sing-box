@@ -71,7 +71,7 @@ func TestPreconnectLifecycle(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("startup preconnect did not start")
 	}
-	outbound.InterfaceUpdated()
+	outbound.InterfaceUpdated(context.Background())
 	select {
 	case count := <-client.started:
 		if count != 2 {
