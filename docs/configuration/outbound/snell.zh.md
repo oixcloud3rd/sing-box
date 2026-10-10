@@ -252,6 +252,17 @@ HTTP/3 失败则使之后 30 秒内的新连接直接使用 TCP。并发 HTTP/3 
 仅允许与显式 `quic_congestion_control: "bbr"` 一起使用；
 其他算法下填写此字段会报错，不会自动切换为 BBR。
 
+##### 传输层 QUIC 字段
+
+可直接在 `transport` 内设置标准 [QUIC 字段](/zh/configuration/shared/quic/)：
+`idle_timeout`、`keep_alive_period`、`stream_receive_window`、
+`connection_receive_window`、`max_concurrent_streams`、`initial_packet_size` 和
+`disable_path_mtu_discovery`。
+
+省略的字段使用 QUIC 库默认值，不再设置 Snell 专用接收窗口、保活参数或按平台覆盖路径 MTU 发现。
+显式指定接收窗口时，该值同时作为初始值与最大值。这些字段仅影响 HTTP/3，
+不影响 TCP 传输或 Happy Eyeballs 建连时限。
+
 #### mode
 
 ==仅版本 6==

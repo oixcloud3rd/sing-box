@@ -146,6 +146,7 @@ func TestSnellHTTP3Options(t *testing.T) {
 		`{"type":"http3","quic_congestion_control":"bbr","bbr_profile":"standard"}`,
 		`{"type":"http3","quic_congestion_control":"bbr","bbr_profile":"conservative"}`,
 		`{"type":"http3","quic_congestion_control":"bbr","bbr_profile":"aggressive"}`,
+		`{"type":"http3","idle_timeout":"45s","keep_alive_period":"15s","stream_receive_window":"8 MB","connection_receive_window":"32 MB","max_concurrent_streams":64,"initial_packet_size":1300,"disable_path_mtu_discovery":true}`,
 	} {
 		var options SnellTransportOptions
 		require.NoError(t, json.Unmarshal([]byte(transport), &options))
@@ -162,6 +163,9 @@ func TestSnellHTTP3Options(t *testing.T) {
 		`{"type":"http3","fallback":false}`,
 		`{"type":"http3","happy_eyeballs":true,"fallback":true}`,
 		`{"type":"http3","happy_eyeballs":"true"}`,
+		`{"type":"http3","idle_timeout":"invalid"}`,
+		`{"type":"http3","stream_receive_window":"invalid"}`,
+		`{"type":"http3","disable_path_mtu_discovery":"true"}`,
 	} {
 		var options SnellTransportOptions
 		require.Error(t, json.Unmarshal([]byte(transport), &options))
@@ -185,6 +189,12 @@ func TestSnellHTTP3Schema(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(generatedSchema.Defs["SnellTransport"], &transport))
 	require.Contains(t, transport.Properties, "happy_eyeballs")
+	for _, field := range []string{
+		"idle_timeout", "keep_alive_period", "stream_receive_window", "connection_receive_window",
+		"max_concurrent_streams", "initial_packet_size", "disable_path_mtu_discovery",
+	} {
+		require.Contains(t, transport.Properties, field)
+	}
 	require.NotContains(t, transport.Properties, "fallback")
 	require.False(t, transport.AdditionalProperties)
 }

@@ -16,7 +16,6 @@ import (
 	"github.com/sagernet/quic-go"
 	"github.com/sagernet/quic-go/http3"
 	"github.com/sagernet/sing-box/common/tls"
-	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	qtls "github.com/sagernet/sing-quic"
@@ -50,6 +49,7 @@ type http3Dialer struct {
 	host       string
 	path       string
 	tlsConfig  tls.Config
+	quicConfig *quic.Config
 	bbrProfile congestion_meta2.Profile
 
 	mu         sync.Mutex
@@ -88,13 +88,29 @@ func newHTTP3Dialer(ctx context.Context, logger log.ContextLogger, dialer N.Dial
 			return nil, err
 		}
 	}
+	quicOptions := options.Transport.QUICOptions
+	quicConfig := &quic.Config{
+		InitialStreamReceiveWindow:     quicOptions.StreamReceiveWindow.Value(),
+		MaxStreamReceiveWindow:         quicOptions.StreamReceiveWindow.Value(),
+		InitialConnectionReceiveWindow: quicOptions.ConnectionReceiveWindow.Value(),
+		MaxConnectionReceiveWindow:     quicOptions.ConnectionReceiveWindow.Value(),
+		MaxIdleTimeout:                 quicOptions.IdleTimeout.Build(),
+		KeepAlivePeriod:                quicOptions.KeepAlivePeriod.Build(),
+		DisablePathMTUDiscovery:        quicOptions.DisablePathMTUDiscovery,
+	}
+	if quicOptions.InitialPacketSize > 0 {
+		quicConfig.InitialPacketSize = uint16(quicOptions.InitialPacketSize)
+	}
+	if quicOptions.MaxConcurrentStreams > 0 {
+		quicConfig.MaxIncomingStreams = int64(quicOptions.MaxConcurrentStreams)
+	}
 	generation, cancel := context.WithCancel(ctx)
 	hash := sha256.Sum256([]byte(options.PSK))
 	return &http3Dialer{
 		Dialer: dialer, ctx: ctx, tcp: tcp,
 		options: *options.Transport, server: options.ServerOptions.Build(),
 		host: tlsConfig.ServerName(), path: fmt.Sprintf("/ws-tunnel-%x", hash[:12]),
-		tlsConfig: tlsConfig, bbrProfile: profile,
+		tlsConfig: tlsConfig, quicConfig: quicConfig, bbrProfile: profile,
 		generation: generation, cancel: cancel, sessions: make(map[*http3Session]struct{}),
 	}, nil
 }
@@ -291,7 +307,7 @@ func (d *http3Dialer) connect(ctx context.Context) (*http3Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := qtls.Dial(ctx, udp, &http3TLSConfig{Config: d.tlsConfig, snapshot: config}, snellHTTP3QUICConfig())
+	conn, err := qtls.Dial(ctx, udp, &http3TLSConfig{Config: d.tlsConfig, snapshot: config}, d.quicConfig.Clone())
 	if err != nil {
 		udp.Close()
 		return nil, err
@@ -317,16 +333,6 @@ func (d *http3Dialer) connect(ctx context.Context) (*http3Session, error) {
 	}
 	client := (&http3.Transport{DisableCompression: true, MaxResponseHeaderBytes: 8 * 1024}).NewClientConn(conn)
 	return &http3Session{conn: conn, client: client, udp: udp}, nil
-}
-
-func snellHTTP3QUICConfig() *quic.Config {
-	return &quic.Config{
-		HandshakeIdleTimeout: 10 * time.Second, MaxIdleTimeout: 30 * time.Second,
-		KeepAlivePeriod: 10 * time.Second, MaxIncomingStreams: -1, MaxIncomingUniStreams: 3,
-		InitialStreamReceiveWindow: 64 * 1024, MaxStreamReceiveWindow: 4 * 1024 * 1024,
-		InitialConnectionReceiveWindow: 1024 * 1024, MaxConnectionReceiveWindow: 16 * 1024 * 1024,
-		DisablePathMTUDiscovery: !C.IsLinux && !C.IsWindows,
-	}
 }
 
 func (d *http3Dialer) open(ctx, generation context.Context) (_ net.Conn, err error) {

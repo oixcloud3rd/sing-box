@@ -267,6 +267,18 @@ One of `standard`, `conservative`, `aggressive`. Defaults to `standard` when usi
 Only valid with explicit `quic_congestion_control: "bbr"`; setting it with any other
 algorithm is an error and does not automatically select BBR.
 
+##### Transport QUIC Fields
+
+The standard [QUIC Fields](/configuration/shared/quic/) are supported directly inside
+`transport`: `idle_timeout`, `keep_alive_period`, `stream_receive_window`,
+`connection_receive_window`, `max_concurrent_streams`, `initial_packet_size`, and
+`disable_path_mtu_discovery`.
+
+Omitted fields use the QUIC library defaults, without Snell-specific receive windows,
+keep-alive settings, or platform-specific path MTU discovery overrides. An explicit
+receive window sets both its initial and maximum size. These fields only affect HTTP/3,
+not the TCP transport or the Happy Eyeballs establishment budget.
+
 #### mode
 
 ==Version 6 only==

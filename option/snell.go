@@ -94,6 +94,7 @@ type SnellTransportOptions struct {
 	HappyEyeballs         bool    `json:"happy_eyeballs,omitempty"`
 	QUICCongestionControl string  `json:"quic_congestion_control,omitempty" enum:"reno,cubic,bbr"`
 	BBRProfile            *string `json:"bbr_profile,omitempty" enum:"standard,conservative,aggressive"`
+	QUICOptions
 }
 
 func (o *SnellTransportOptions) UnmarshalJSON(content []byte) error {

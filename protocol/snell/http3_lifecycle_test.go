@@ -11,6 +11,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/sagernet/quic-go"
 	boxTLS "github.com/sagernet/sing-box/common/tls"
 	"github.com/sagernet/sing-box/option"
 	M "github.com/sagernet/sing/common/metadata"
@@ -34,9 +35,10 @@ func newHTTP3LifecycleDialer(t *testing.T, happyEyeballs bool, dial func(context
 	d := &http3Dialer{
 		Dialer: snellHTTP3TestDialer{dial: dial},
 		ctx:    context.Background(), generation: generation, cancel: cancel,
-		options:   option.SnellTransportOptions{HappyEyeballs: happyEyeballs},
-		tlsConfig: &http3TLSConfig{snapshot: &boxTLS.STDConfig{}},
-		sessions:  make(map[*http3Session]struct{}),
+		options:    option.SnellTransportOptions{HappyEyeballs: happyEyeballs},
+		tlsConfig:  &http3TLSConfig{snapshot: &boxTLS.STDConfig{}},
+		quicConfig: new(quic.Config),
+		sessions:   make(map[*http3Session]struct{}),
 	}
 	t.Cleanup(func() { d.Close() })
 	return d
