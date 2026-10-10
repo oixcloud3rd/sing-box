@@ -196,7 +196,7 @@ The tunnel carries raw Snell bytes, not WebSocket frames.
 Requires explicit `identity: 2`, TLS and ECH enabled, and certificate verification
 (`tls.insecure` must be `false`). Simple-obfs, Reality, non-Go TLS engines, and
 explicit TLS versions other than `1.3` are not supported.
-The binary must be built with `with_quic`, even when fallback is enabled.
+The binary must be built with `with_quic`, even when Happy Eyeballs is enabled.
 
 ```json
 {
@@ -208,7 +208,7 @@ The binary must be built with `with_quic`, even when fallback is enabled.
   "identity": 2,
   "transport": {
     "type": "http3",
-    "fallback": false,
+    "happy_eyeballs": false,
     "quic_congestion_control": "reno"
   },
   "tls": {
@@ -223,27 +223,43 @@ The binary must be built with `with_quic`, even when fallback is enabled.
 
 ECH supports inline configs, a config file, or DNS lookup as in the existing TLS
 configuration. HTTP/3 uses Go TLS 1.3 with ALPN `h3`; `tls.utls`, TLS fragmentation,
-spoofing and kTLS only apply to TCP fallback. HTTP/3 does not overwrite the TCP ALPN:
-fallback uses `tls.alpn`, or `snell-ech/1` when omitted.
+spoofing and kTLS only apply to the TCP transport. HTTP/3 does not overwrite the TCP ALPN:
+TCP uses `tls.alpn`, or `snell-ech/1` when omitted.
 
 Both TCP and UDP proxy traffic use the tunnel. QUIC sessions are shared across
 independent tunnels; existing `reuse` and `preconnect` options still apply.
 
-##### transport.fallback
+##### transport.happy_eyeballs
 
 Default: `false`. HTTP/3 tunnel establishment has a 10-second budget and failures
 are returned directly.
 
-When `true`, the HTTP/3 budget is 2 seconds. Establishment failure falls back to
-ECH-TLS TCP at the same server address and port. New connections use TCP for
-30 seconds before trying HTTP/3 again. A shorter caller deadline takes precedence.
-Fallback still requires certificate verification and accepted ECH; it never
-uses plaintext Snell or Identity v1, or retries after Snell data has been sent.
+When `true`, HTTP/3 starts immediately with a 2-second budget. ECH-TLS TCP to the
+same server address and port starts after 250 ms, or immediately if HTTP/3 fails.
+With an existing QUIC session, the delay is twice its smoothed RTT, bounded to
+100 ms–1 second. The first verified transport wins; TCP failure does not cancel
+an ongoing HTTP/3 attempt. Racing happens before any Snell authentication or data
+is sent, never by replaying a request.
+
+If TCP wins, HTTP/3 continues within its original budget. A late success closes
+the unused tunnel but keeps the QUIC session warm and clears the cooldown; an
+HTTP/3 failure makes new connections use TCP directly for 30 seconds. A successful
+overlapping HTTP/3 attempt also clears that cooldown.
+
+Caller cancellation or a shorter deadline ends the race while it is waiting for
+a winner, without marking HTTP/3 unhealthy. Shared QUIC session establishment is
+independent of any single waiter and is bounded to 2 seconds (10 seconds when
+Happy Eyeballs is disabled). Interface changes and shutdown cancel background
+work and discard its results.
+
+Both transports still require certificate verification and accepted ECH; neither
+uses plaintext Snell or Identity v1. The old `transport.fallback` field is removed
+and rejected; replace it with `transport.happy_eyeballs`.
 
 ##### transport.quic_congestion_control
 
 One of `reno`, `cubic`, `bbr`. Defaults to the QUIC library's native Reno controller.
-Applies to client-side QUIC sending only, not the server's sending algorithm or TCP fallback.
+Applies to client-side QUIC sending only, not the server's sending algorithm or the TCP transport.
 
 ##### transport.bbr_profile
 

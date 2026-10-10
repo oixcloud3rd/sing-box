@@ -167,7 +167,16 @@ func testHTTP3TCPEcho(t *testing.T, conn net.Conn) {
 }
 
 func TestSnellHTTP3(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("happy_eyeballs=%v", enabled), func(t *testing.T) {
+			testSnellHTTP3(t, enabled)
+		})
+	}
+}
+
+func testSnellHTTP3(t *testing.T, happyEyeballs bool) {
 	ctx, options, stats := newHTTP3TestServer(t, http.StatusOK)
+	options.Transport.HappyEyeballs = happyEyeballs
 	options.Reuse = true
 	out, err := NewOutbound(ctx, nil, logger.NOP(), "test", options)
 	require.NoError(t, err)
@@ -202,15 +211,15 @@ func TestSnellHTTP3(t *testing.T) {
 	require.EqualValues(t, 2, stats.connections.Load())
 }
 
-func TestSnellHTTP3Fallback(t *testing.T) {
+func TestSnellHTTP3HappyEyeballsRejectedTunnel(t *testing.T) {
 	ctx, options, stats := newHTTP3TestServer(t, http.StatusForbidden)
-	for _, fallback := range []bool{false, true} {
-		options.Transport.Fallback = fallback
+	for _, happyEyeballs := range []bool{false, true} {
+		options.Transport.HappyEyeballs = happyEyeballs
 		out, err := NewOutbound(ctx, nil, logger.NOP(), "test", options)
 		require.NoError(t, err)
 		t.Cleanup(func() { out.(*Outbound).Close() })
 		conn, err := out.DialContext(ctx, N.NetworkTCP, M.ParseSocksaddr("destination.example:443"))
-		if !fallback {
+		if !happyEyeballs {
 			require.ErrorContains(t, err, "CONNECT status 403")
 			require.Zero(t, stats.tcp.Load())
 			continue
@@ -224,6 +233,106 @@ func TestSnellHTTP3Fallback(t *testing.T) {
 		require.Equal(t, requests, stats.requests.Load(), "cooldown must bypass HTTP/3")
 		require.EqualValues(t, 2, stats.tcp.Load())
 	}
+}
+
+func TestSnellHTTP3SharedDialSurvivesCanceledOpener(t *testing.T) {
+	ctx, options, stats := newHTTP3TestServer(t, http.StatusOK)
+	options.Transport.HappyEyeballs = true
+	out, err := NewOutbound(ctx, nil, logger.NOP(), "test", options)
+	require.NoError(t, err)
+	outbound := out.(*Outbound)
+	t.Cleanup(func() { outbound.Close() })
+	d := outbound.transport.(*http3Dialer)
+	require.Zero(t, d.smoothedRTT())
+	rawDialer := d.Dialer
+	started, proceed := make(chan struct{}), make(chan struct{})
+	var dials atomic.Int32
+	d.Dialer = snellHTTP3TestDialer{dial: func(ctx context.Context, network string, address M.Socksaddr) (net.Conn, error) {
+		if dials.Add(1) == 1 {
+			close(started)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-proceed:
+			return rawDialer.DialContext(ctx, network, address)
+		}
+	}}
+	initiator, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		c, err := d.open(initiator, d.generation)
+		if c != nil {
+			c.Close()
+		}
+		done <- err
+	}()
+	select {
+	case <-started:
+	case <-ctx.Done():
+		t.Fatal("session dial did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-ctx.Done():
+		t.Fatal("canceled opener did not return")
+	}
+	close(proceed)
+	c, err := out.DialContext(ctx, N.NetworkTCP, M.ParseSocksaddr("destination.example:443"))
+	require.NoError(t, err)
+	testHTTP3TCPEcho(t, c)
+	require.EqualValues(t, 1, dials.Load())
+	require.EqualValues(t, 1, stats.connections.Load())
+	require.Zero(t, stats.tcp.Load())
+	require.Positive(t, d.smoothedRTT())
+	require.NoError(t, outbound.Close())
+	require.Zero(t, d.smoothedRTT())
+}
+
+func TestSnellHTTP3LateSuccessKeepsSessionWarm(t *testing.T) {
+	ctx, options, stats := newHTTP3TestServer(t, http.StatusOK)
+	options.Transport.HappyEyeballs = true
+	out, err := NewOutbound(ctx, nil, logger.NOP(), "test", options)
+	require.NoError(t, err)
+	outbound := out.(*Outbound)
+	t.Cleanup(func() { outbound.Close() })
+	d := outbound.transport.(*http3Dialer)
+	rawDialer := d.Dialer
+	proceed := make(chan struct{})
+	var dials atomic.Int32
+	d.Dialer = snellHTTP3TestDialer{dial: func(ctx context.Context, network string, address M.Socksaddr) (net.Conn, error) {
+		dials.Add(1)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-proceed:
+			return rawDialer.DialContext(ctx, network, address)
+		}
+	}}
+	caller, cancel := context.WithCancel(ctx)
+	defer cancel()
+	c, err := out.DialContext(caller, N.NetworkTCP, M.ParseSocksaddr("destination.example:443"))
+	require.NoError(t, err)
+	testHTTP3TCPEcho(t, c)
+	require.EqualValues(t, 1, stats.tcp.Load())
+	cancel()
+	d.recordHTTP3Result(d.generation, false)
+	close(proceed)
+	require.Eventually(t, func() bool {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return stats.requests.Load() == 1 && d.current != nil && d.current.refs == 0 && d.retryAfter.IsZero()
+	}, 5*time.Second, 10*time.Millisecond)
+	c, err = out.DialContext(ctx, N.NetworkTCP, M.ParseSocksaddr("destination.example:443"))
+	require.NoError(t, err)
+	testHTTP3TCPEcho(t, c)
+	require.EqualValues(t, 1, dials.Load())
+	require.EqualValues(t, 1, stats.connections.Load())
+	require.EqualValues(t, 2, stats.requests.Load())
+	require.EqualValues(t, 1, stats.tcp.Load())
 }
 
 var _ snellprotocol.KeyingMaterialExporter = (*http3Conn)(nil)

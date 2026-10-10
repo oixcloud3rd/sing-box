@@ -190,7 +190,7 @@ TLS 连接直接承载 raw Snell v4。不能与 simple-obfs 组合使用，且�
 
 要求显式设置 `identity: 2`，开启 TLS、ECH 和证书验证（`tls.insecure` 必须为 `false`）。
 不支持叠加 simple-obfs、Reality、非 Go TLS 引擎或显式配置 `1.3` 以外的 TLS 版本。
-二进制必须使用 `with_quic` 构建，即使开启回退也不例外。
+二进制必须使用 `with_quic` 构建，即使开启 Happy Eyeballs 也不例外。
 
 ```json
 {
@@ -202,7 +202,7 @@ TLS 连接直接承载 raw Snell v4。不能与 simple-obfs 组合使用，且�
   "identity": 2,
   "transport": {
     "type": "http3",
-    "fallback": false,
+    "happy_eyeballs": false,
     "quic_congestion_control": "reno"
   },
   "tls": {
@@ -216,24 +216,35 @@ TLS 连接直接承载 raw Snell v4。不能与 simple-obfs 组合使用，且�
 ```
 
 ECH 沿用现有 TLS 配置，支持内联配置、配置文件和 DNS 获取。
-HTTP/3 使用 Go TLS 1.3 和 `h3` ALPN；`tls.utls`、TLS 分片、spoof 和 kTLS 仅用于 TCP 回退。
-HTTP/3 不覆盖 TCP 的 ALPN：回退使用显式 `tls.alpn`，省略时默认 `snell-ech/1`。
+HTTP/3 使用 Go TLS 1.3 和 `h3` ALPN；`tls.utls`、TLS 分片、spoof 和 kTLS 仅用于 TCP 传输。
+HTTP/3 不覆盖 TCP 的 ALPN：TCP 使用显式 `tls.alpn`，省略时默认 `snell-ech/1`。
 
 TCP 和 UDP 代理流量均通过隧道传输。多个独立隧道共享 QUIC 会话，
 现有 `reuse` 和 `preconnect` 配置仍然适用。
 
-##### transport.fallback
+##### transport.happy_eyeballs
 
 默认 `false`。HTTP/3 隧道建立预算为 10 秒，失败直接返回错误。
 
-设为 `true` 时，HTTP/3 建隧道预算为 2 秒，失败后回退到同一服务器地址和端口的 ECH-TLS TCP。
-之后 30 秒内新建连接直接使用 TCP，再恢复 HTTP/3 尝试。调用方更短的 deadline 优先。
-回退仍要求证书验证和 ECH 成功，不使用明文 Snell 或 Identity v1，也不会在发送 Snell 数据后重试。
+设为 `true` 时，立即启动 HTTP/3，建隧道预算为 2 秒；延迟 250 ms 后启动同一服务器地址和端口的
+ECH-TLS TCP。若 HTTP/3 提前失败，则立即启动 TCP。已有 QUIC 会话时，延迟为其平滑 RTT 的两倍，
+限制在 100 ms–1 秒。首个完成验证的传输获胜，TCP 失败不会取消仍在进行的 HTTP/3 尝试。
+竞速发生在发送 Snell 认证和业务数据之前，不会重放请求。
+
+TCP 获胜后，HTTP/3 在原有预算内继续尝试。迟到成功会关闭多余隧道，但保留 QUIC 会话并清除冷却；
+HTTP/3 失败则使之后 30 秒内的新连接直接使用 TCP。并发 HTTP/3 尝试成功也会清除冷却。
+
+等待获胜连接期间，调用方取消或更短的 deadline 会终止竞速，且不会将 HTTP/3 标记为故障。
+共享 QUIC 建连不受单个等待者取消影响，预算为 2 秒（未开启 Happy Eyeballs 时为 10 秒）。
+接口更新和关闭会取消后台任务并丢弃旧结果。
+
+两种传输均要求证书验证和 ECH 成功，不使用明文 Snell 或 Identity v1。
+旧字段 `transport.fallback` 已移除并会报错，请改用 `transport.happy_eyeballs`。
 
 ##### transport.quic_congestion_control
 
 支持 `reno`、`cubic`、`bbr`，默认使用 QUIC 库原生 Reno。
-仅控制客户端 QUIC 发送方向，不改变服务端发送算法，也不影响 TCP 回退。
+仅控制客户端 QUIC 发送方向，不改变服务端发送算法，也不影响 TCP 传输。
 
 ##### transport.bbr_profile
 

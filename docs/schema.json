@@ -17112,7 +17112,7 @@
             "http3"
           ]
         },
-        "fallback": {
+        "happy_eyeballs": {
           "type": "boolean"
         },
         "quic_congestion_control": {

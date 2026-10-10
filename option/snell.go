@@ -91,7 +91,7 @@ type AbstractSnellOutboundOptions struct {
 
 type SnellTransportOptions struct {
 	Type                  string  `json:"type" enum:"http3"`
-	Fallback              bool    `json:"fallback,omitempty"`
+	HappyEyeballs         bool    `json:"happy_eyeballs,omitempty"`
 	QUICCongestionControl string  `json:"quic_congestion_control,omitempty" enum:"reno,cubic,bbr"`
 	BBRProfile            *string `json:"bbr_profile,omitempty" enum:"standard,conservative,aggressive"`
 }

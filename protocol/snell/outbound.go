@@ -86,7 +86,7 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 	}
 	serverAddr := options.ServerOptions.Build()
 	serverDialer := N.Dialer(outboundDialer)
-	if echTLSEnabled && (options.Transport == nil || options.Transport.Fallback) {
+	if echTLSEnabled && (options.Transport == nil || options.Transport.HappyEyeballs) {
 		tlsOptions := *options.TLS
 		if options.Transport != nil && len(tlsOptions.ALPN) == 0 {
 			tlsOptions.ALPN = []string{"snell-ech/1"}

@@ -35,10 +35,16 @@ type http3Session struct {
 	refs   int
 }
 
+type http3Dial struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+	err    error
+}
+
 type http3Dialer struct {
 	N.Dialer
 	ctx        context.Context
-	fallback   N.Dialer
+	tcp        N.Dialer
 	options    option.SnellTransportOptions
 	server     M.Socksaddr
 	host       string
@@ -51,12 +57,12 @@ type http3Dialer struct {
 	generation context.Context
 	cancel     context.CancelFunc
 	retryAfter time.Time
-	pending    chan struct{}
+	pending    *http3Dial
 	current    *http3Session
 	sessions   map[*http3Session]struct{}
 }
 
-func newHTTP3Dialer(ctx context.Context, logger log.ContextLogger, dialer N.Dialer, fallback N.Dialer, options option.SnellOutboundOptions) (transportDialer, error) {
+func newHTTP3Dialer(ctx context.Context, logger log.ContextLogger, dialer N.Dialer, tcp N.Dialer, options option.SnellOutboundOptions) (transportDialer, error) {
 	tlsOptions := *options.TLS
 	tlsOptions.ALPN = []string{http3.NextProtoH3}
 	tlsOptions.MinVersion = "1.3"
@@ -85,7 +91,7 @@ func newHTTP3Dialer(ctx context.Context, logger log.ContextLogger, dialer N.Dial
 	generation, cancel := context.WithCancel(ctx)
 	hash := sha256.Sum256([]byte(options.PSK))
 	return &http3Dialer{
-		Dialer: dialer, ctx: ctx, fallback: fallback,
+		Dialer: dialer, ctx: ctx, tcp: tcp,
 		options: *options.Transport, server: options.ServerOptions.Build(),
 		host: tlsConfig.ServerName(), path: fmt.Sprintf("/ws-tunnel-%x", hash[:12]),
 		tlsConfig: tlsConfig, bbrProfile: profile,
@@ -103,7 +109,7 @@ func (d *http3Dialer) DialContext(ctx context.Context, network string, _ M.Socks
 		return nil, net.ErrClosed
 	}
 	generation := d.generation
-	coolingDown := d.options.Fallback && time.Now().Before(d.retryAfter)
+	coolingDown := d.options.HappyEyeballs && time.Now().Before(d.retryAfter)
 	d.mu.Unlock()
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -113,29 +119,23 @@ func (d *http3Dialer) DialContext(ctx context.Context, network string, _ M.Socks
 	if generation.Err() != nil {
 		return nil, generation.Err()
 	}
-	if !coolingDown {
-		timeout := 10 * time.Second
-		if d.options.Fallback {
-			timeout = 2 * time.Second
-		}
-		h3Ctx, h3Cancel := context.WithTimeout(ctx, timeout)
-		conn, err := d.open(h3Ctx, generation)
-		h3Cancel()
-		if err == nil {
-			return conn, nil
-		}
-		if !d.options.Fallback || ctx.Err() != nil {
-			return nil, err
-		}
-		d.mu.Lock()
-		if d.generation != generation || d.closed {
-			d.mu.Unlock()
-			return nil, net.ErrClosed
-		}
-		d.retryAfter = time.Now().Add(30 * time.Second)
-		d.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	conn, err := d.fallback.DialContext(ctx, N.NetworkTCP, d.server)
+	var conn net.Conn
+	var err error
+	switch {
+	case !d.options.HappyEyeballs:
+		h3Ctx, h3Cancel := context.WithTimeout(ctx, d.timeout())
+		conn, err = d.open(h3Ctx, generation)
+		h3Cancel()
+	case coolingDown:
+		conn, err = d.dialTCP(ctx)
+	default:
+		conn, err = raceSnellTransports(ctx, generation, snellHTTP3Delay(d.smoothedRTT()), d.timeout(),
+			func(ctx context.Context) (net.Conn, error) { return d.open(ctx, generation) },
+			d.dialTCP, func(succeeded bool) { d.recordHTTP3Result(generation, succeeded) })
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -150,6 +150,40 @@ func (d *http3Dialer) DialContext(ctx context.Context, network string, _ M.Socks
 	return conn, nil
 }
 
+func (d *http3Dialer) dialTCP(ctx context.Context) (net.Conn, error) {
+	return d.tcp.DialContext(ctx, N.NetworkTCP, d.server)
+}
+
+func (d *http3Dialer) timeout() time.Duration {
+	if d.options.HappyEyeballs {
+		return 2 * time.Second
+	}
+	return 10 * time.Second
+}
+
+func (d *http3Dialer) smoothedRTT() time.Duration {
+	d.mu.Lock()
+	session := d.current
+	d.mu.Unlock()
+	if session == nil || session.conn.Context().Err() != nil {
+		return 0
+	}
+	return session.conn.ConnectionStats().SmoothedRTT
+}
+
+func (d *http3Dialer) recordHTTP3Result(generation context.Context, succeeded bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed || d.generation != generation || generation.Err() != nil {
+		return
+	}
+	if succeeded {
+		d.retryAfter = time.Time{}
+	} else {
+		d.retryAfter = time.Now().Add(30 * time.Second)
+	}
+}
+
 func (d *http3Dialer) ListenPacket(context.Context, M.Socksaddr) (net.PacketConn, error) {
 	return nil, E.New("snell: HTTP/3 carries Snell packet connections over streams")
 }
@@ -160,7 +194,7 @@ func (d *http3Dialer) get(ctx, generation context.Context) (*http3Session, error
 			return nil, err
 		}
 		d.mu.Lock()
-		if d.closed || d.generation != generation {
+		if d.closed || d.generation != generation || generation.Err() != nil {
 			d.mu.Unlock()
 			return nil, net.ErrClosed
 		}
@@ -169,47 +203,62 @@ func (d *http3Dialer) get(ctx, generation context.Context) (*http3Session, error
 			d.mu.Unlock()
 			return session, nil
 		}
-		if pending := d.pending; pending != nil {
-			d.mu.Unlock()
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-pending:
-				continue
-			}
+		pending := d.pending
+		if pending == nil {
+			// A session dial belongs to the generation, not its first waiter.
+			dialCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), d.timeout())
+			pending = &http3Dial{cancel: cancel, done: make(chan struct{})}
+			d.pending = pending
+			stop := context.AfterFunc(generation, cancel)
+			go func() {
+				defer stop()
+				defer cancel()
+				d.connectSession(dialCtx, generation, pending)
+			}()
 		}
-		pending := make(chan struct{})
-		d.pending = pending
 		d.mu.Unlock()
-
-		session, err := d.connect(ctx)
-		d.mu.Lock()
-		if err == nil && (d.closed || d.generation != generation || ctx.Err() != nil) {
-			session.conn.CloseWithError(0, "")
-			session.udp.Close()
-			err = net.ErrClosed
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-pending.done:
 		}
-		if err == nil {
-			session.refs = 1
-			d.current = session
-			d.sessions[session] = struct{}{}
-			context.AfterFunc(session.conn.Context(), func() {
-				session.udp.Close()
-				d.mu.Lock()
-				delete(d.sessions, session)
-				if d.current == session {
-					d.current = nil
-				}
-				d.mu.Unlock()
-			})
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-		if d.pending == pending {
-			d.pending = nil
+		if pending.err != nil {
+			return nil, pending.err
 		}
-		close(pending)
-		d.mu.Unlock()
-		return session, err
 	}
+}
+
+func (d *http3Dialer) connectSession(ctx, generation context.Context, pending *http3Dial) {
+	session, err := d.connect(ctx)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if err == nil && (d.closed || d.generation != generation || generation.Err() != nil || ctx.Err() != nil) {
+		session.conn.CloseWithError(0, "")
+		session.udp.Close()
+		err = net.ErrClosed
+	}
+	if err == nil {
+		// Waiters acquire references in get; an unused current session stays warm.
+		d.current = session
+		d.sessions[session] = struct{}{}
+		context.AfterFunc(session.conn.Context(), func() {
+			session.udp.Close()
+			d.mu.Lock()
+			delete(d.sessions, session)
+			if d.current == session {
+				d.current = nil
+			}
+			d.mu.Unlock()
+		})
+	}
+	pending.err = err
+	if d.pending == pending {
+		d.pending = nil
+	}
+	close(pending.done)
 }
 
 // QUIC needs a DNS-resolved ECH snapshot, rather than the TCP handshake hook.
@@ -372,6 +421,9 @@ func (d *http3Dialer) release(session *http3Session) {
 
 func (d *http3Dialer) resetLocked() {
 	d.cancel()
+	if d.pending != nil {
+		d.pending.cancel()
+	}
 	d.current = nil
 	d.pending = nil
 	d.retryAfter = time.Time{}

@@ -1,8 +1,11 @@
 package option
 
 import (
+	"os"
+	"reflect"
 	"testing"
 
+	"github.com/sagernet/sing-box/schema"
 	"github.com/sagernet/sing/common/json"
 
 	"github.com/stretchr/testify/require"
@@ -130,7 +133,7 @@ func TestSnellHTTP3Options(t *testing.T) {
 	content := `{"server":"server.example","server_port":443,"version":4,"psk":"password","identity":2,"transport":{"type":"http3"}}`
 	var options SnellOutboundOptions
 	require.NoError(t, json.Unmarshal([]byte(content), &options))
-	require.False(t, options.Transport.Fallback)
+	require.False(t, options.Transport.HappyEyeballs)
 	require.Empty(t, options.Transport.QUICCongestionControl)
 	require.Nil(t, options.Transport.BBRProfile)
 	encoded, err := json.Marshal(options)
@@ -139,21 +142,49 @@ func TestSnellHTTP3Options(t *testing.T) {
 
 	for _, transport := range []string{
 		`{"type":"http3","quic_congestion_control":"reno"}`,
-		`{"type":"http3","quic_congestion_control":"cubic","fallback":true}`,
+		`{"type":"http3","quic_congestion_control":"cubic","happy_eyeballs":true}`,
 		`{"type":"http3","quic_congestion_control":"bbr","bbr_profile":"standard"}`,
 		`{"type":"http3","quic_congestion_control":"bbr","bbr_profile":"conservative"}`,
 		`{"type":"http3","quic_congestion_control":"bbr","bbr_profile":"aggressive"}`,
 	} {
 		var options SnellTransportOptions
 		require.NoError(t, json.Unmarshal([]byte(transport), &options))
+		encoded, err := json.Marshal(options)
+		require.NoError(t, err)
+		require.JSONEq(t, transport, string(encoded))
 	}
 	for _, transport := range []string{
 		`{"type":"http3","quic_congestion_control":"unknown"}`,
 		`{"type":"http3","bbr_profile":"standard"}`,
 		`{"type":"http3","quic_congestion_control":"bbr","bbr_profile":"unknown"}`,
 		`{"type":"http3","path":"/custom"}`,
+		`{"type":"http3","fallback":true}`,
+		`{"type":"http3","fallback":false}`,
+		`{"type":"http3","happy_eyeballs":true,"fallback":true}`,
+		`{"type":"http3","happy_eyeballs":"true"}`,
 	} {
 		var options SnellTransportOptions
 		require.Error(t, json.Unmarshal([]byte(transport), &options))
 	}
+}
+
+func TestSnellHTTP3Schema(t *testing.T) {
+	generated, err := schema.Generate(t.Context(), reflect.TypeFor[SnellTransportOptions]())
+	require.NoError(t, err)
+	published, err := os.ReadFile("../docs/schema.json")
+	require.NoError(t, err)
+	var generatedSchema, publishedSchema struct {
+		Defs map[string]json.RawMessage `json:"$defs"`
+	}
+	require.NoError(t, json.Unmarshal(generated, &generatedSchema))
+	require.NoError(t, json.Unmarshal(published, &publishedSchema))
+	require.JSONEq(t, string(generatedSchema.Defs["SnellTransport"]), string(publishedSchema.Defs["SnellTransport"]))
+	var transport struct {
+		Properties           map[string]json.RawMessage `json:"properties"`
+		AdditionalProperties bool                       `json:"additionalProperties"`
+	}
+	require.NoError(t, json.Unmarshal(generatedSchema.Defs["SnellTransport"], &transport))
+	require.Contains(t, transport.Properties, "happy_eyeballs")
+	require.NotContains(t, transport.Properties, "fallback")
+	require.False(t, transport.AdditionalProperties)
 }
